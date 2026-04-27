@@ -1,4 +1,4 @@
-# WIREFRAMES — Democracy Without Candidates (ENTERPRISE / PRD LEVEL)
+# WIREFRAMES — Democracy Without Candidates
 
 ## 📌 DOCUMENT PURPOSE
 This document defines enterprise-grade wireframes aligned 100% with the PRD, including:

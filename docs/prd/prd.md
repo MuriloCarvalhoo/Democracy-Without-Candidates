@@ -1,9 +1,9 @@
 # Democracy Without Candidates
 ## Product Requirements Document (PRD)
 
-> **Versão:** 1.2.0 | **Atualização:** 2026-10-12 | **Status:** Especificação; aplicação não implementada
+> **Versão:** 1.2.1 | **Atualização:** 2026-10-12 | **Status:** Especificação; aplicação não implementada
 
-Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). Os critérios abaixo são requisitos futuros, sem evidência de implementação. A revisão substitui a stack anterior e explicita decisões abertas; não aprova novas regras eleitorais nem um protocolo criptográfico.
+Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). Os critérios abaixo são requisitos futuros, sem evidência de implementação. As [decisões pendentes](#13-decisões-de-produto-pendentes) precisam ser resolvidas antes das features afetadas.
 
 ---
 
@@ -36,7 +36,7 @@ O produto prevê autenticação biométrica facial com segundo fator TOTP, priva
 | Pilar | Descrição |
 |-------|-----------|
 | **1 pessoa = 1 voto** | Prova de identidade e unicidade de participação verificadas, inclusive entre modos público/privado |
-| **Soberania do setup** | Cada jurisdição define suas próprias regras via votação direta |
+| **Soberania do setup** | Regras definidas por votação direta; alcance por país ou jurisdição pendente na seção 13 |
 | **Privacidade por padrão** | Voto secreto como padrão, com opt-in público |
 | **Transparência** | Resultados, estatísticas e evidências públicas sem divulgar dados pessoais ou comprometer votos privados |
 | **Código auditável** | Plataforma open-source ou com auditoria independente obrigatória |
@@ -55,7 +55,7 @@ O produto prevê autenticação biométrica facial com segundo fator TOTP, priva
 | Verificação | Rust, banco real, navegador e carga em release | Estratégia detalhada no plano SDD |
 | Segurança eleitoral | Protocolo a selecionar e validar | Não há implementação de sigilo, prova ou custódia de chaves |
 
-A stack anterior foi substituída, com histórico preservado no Git. A decisão Rust não elimina HTML/CSS nem o JavaScript gerado para carregar o WASM.
+A decisão Rust inclui HTML/CSS e JavaScript gerado para carregar o WASM.
 
 ### 1.3 Tipos de Proposta
 
@@ -70,10 +70,12 @@ A stack anterior foi substituída, com histórico preservado no Git. A decisão 
 
 ### 2.1 Países e hierarquia territorial
 
-Cada país tem sua própria instância e configuração, sem banco global exigido pelo runtime inicial. Dentro de cada país existem níveis nacional, estadual e municipal.
+O país inicial é o Brasil. A mesma aplicação deve atender outros países por configuração própria de implantação, documentos de identidade, idioma e organização territorial, sem regras brasileiras fixadas no código de domínio. A elegibilidade e as regras eleitorais de cada país exigem especificação e validação próprias.
+
+Cada país tem sua própria instância e configuração, sem banco global exigido pelo runtime inicial. No Brasil, o modelo prevê níveis nacional, estadual e municipal; a hierarquia de outros países depende da configuração e especificação da implantação.
 
 ```text
-Implantação do país (subdomínio + VPS + aplicação + banco)
+Implantação inicial: Brasil (subdomínio + VPS + aplicação + banco)
 └── Jurisdição nacional
     └── Jurisdições estaduais
         └── Jurisdições municipais
@@ -81,15 +83,19 @@ Implantação do país (subdomínio + VPS + aplicação + banco)
 
 O papel Admin Master e os fluxos de administração global permanecem previstos para expansão, mas sua autoridade e integração entre instâncias precisam ser revistas. Não pressupõem acesso automático aos bancos de outros países.
 
+O uso é exclusivamente online. Votação, coleta de assinaturas e atendimento eleitoral em meio físico não integram o escopo. Instalabilidade como PWA não inclui modo offline.
+
 ### 2.2 Regras de Isolamento
 
 | Regra | Descrição |
 |-------|-----------|
 | **Isolamento por País** | Dados, votos e propostas de um país nunca são misturados com outro |
 | **Isolamento por Nível** | Propostas municipais não interferem em estaduais ou nacionais |
-| **Cidadão por Jurisdição** | Um cidadão é registrado em uma jurisdição por vez |
-| **Setup por País** | Cada país tem seu próprio conjunto de regras definido por plebiscito |
+| **Cidadão por Jurisdição** | Vínculo territorial pretendido; residência e participação nos níveis municipal, estadual e nacional ainda a definir |
+| **Setup** | Regras por plebiscito; relação entre configuração do país e das jurisdições ainda a definir |
 | **Imutabilidade de Votos** | Votos emitidos não podem ser alterados, apenas auditados |
+
+O alcance do isolamento dentro do país, incluindo leitura pública e elegibilidade entre níveis, está pendente na [seção 13](#13-decisões-de-produto-pendentes). A hierarquia não resolve essas regras por si só.
 
 ### 2.3 Parâmetros Padrão Sugeridos
 
@@ -118,7 +124,7 @@ Estes valores são propostas de configuração, não regras de produção já ap
 
 ## 3. Módulo: Autenticação Biométrica
 
-O requisito de produto é reconhecimento facial e segundo fator TOTP. Provedor, prova de identidade, recuperação e integração real permanecem abertos. A referência anterior a `auth-face` não aprova uma implementação ou suas garantias. Ver [identidade e autorização](../architecture/auth-rbac-flow.md).
+O requisito de produto é reconhecimento facial e segundo fator TOTP. As decisões sobre identidade e sessão estão na [seção 13](#13-decisões-de-produto-pendentes); fluxos e critérios técnicos em [identidade e autorização](../architecture/auth-rbac-flow.md).
 
 ### 3.1 Fluxo de Autenticação a especificar
 
@@ -138,7 +144,7 @@ As seguintes ações exigem revalidação biométrica completa (face + 2FA):
 - Criação de proposta
 - Alteração de dados de perfil sensíveis e privacidade
 
-O guia anterior também inclui participação em alteração de setup. Especificar validade, escopo da ação/recurso e prevenção de replay da reautenticação antes de implementar esses fluxos.
+Participação em alteração de setup também exige a reautenticação prevista no [guia de identidade](../architecture/auth-rbac-flow.md#reautenticação-e-autorização-no-servidor). Especificar validade, escopo da ação/recurso e prevenção de replay antes de implementar esses fluxos.
 
 ### 3.3 Segurança Biométrica
 
@@ -268,7 +274,7 @@ A interface inicial será composta por páginas SSR e server functions Leptos, i
 | Administração/auditoria | Operações autorizadas por papel, recurso e jurisdição, sem edição direta de regras eleitorais |
 | Plataforma global futura | Catálogo de países e operação entre instâncias ainda a revisar |
 
-Os caminhos `/api/v1/...` da proposta anterior não são endpoints existentes ou contrato aprovado para o scaffold. Os critérios R18/R19 preservam leitura pública e operações autenticadas; R18/R19 não afirmam entrega de API REST externa. Se um consumidor externo for necessário, decidir seu contrato e validar autorização/compatibilidade antes de implementá-lo.
+R18/R19 abrangem leitura pública e operações autenticadas pela interface inicial. Uma API externa depende de contrato e consumidores definidos, conforme a [seção 13](#13-decisões-de-produto-pendentes).
 
 ---
 
@@ -289,7 +295,7 @@ Os caminhos `/api/v1/...` da proposta anterior não são endpoints existentes ou
 | RNF11 | Backup | Meta inicial diária e retenção de 10 anos; política por categoria, RPO/RTO e restauração ainda a decidir/validar |
 | RNF12 | Organização | Monolito modular Rust, inicialmente um pacote de aplicação |
 | RNF13 | Stack técnica | Rust, Leptos SSR/hidratação WASM, Axum/Tokio e TursoDB local |
-| RNF14 | PWA | Frontend instalável como app no celular e desktop |
+| RNF14 | PWA | Frontend instalável como app no celular e desktop, com uso exclusivamente online |
 | RNF15 | Ambiente reproduzível | Toolchain/lockfile e harness local/CI; containerização não é pré-requisito aprovado |
 
 ---
@@ -336,13 +342,13 @@ Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção e
 
 ## 12. Critérios de Aceite
 
-Todos estão pendentes, sem testes executados. Os IDs R01–R26 foram mantidos. Critérios técnicos R18/R19/R25 foram reconciliados com as interfaces e o ambiente aprovados, sem exigir a stack anterior. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
+Todos estão pendentes, sem testes executados. Os IDs R01–R26 são estáveis. R03/R15 preservam a administração global como expansão futura, sem torná-la requisito da instância inicial. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
 
 | ID | Critério |
 |----|---------|
 | R01 | Sistema acessível via WEB (PWA) com disponibilidade em tempo real |
 | R02 | Prova de identidade com face + 2FA e prevenção de duplicidade demonstradas; mock não satisfaz provider real |
-| R03 | RBAC implementado com todos os 6 papéis definidos |
+| R03 | RBAC com os papéis da instância e políticas aprovadas; Admin Master depende da definição da expansão global |
 | R04 | Perfil público e privado configurável pelo cidadão |
 | R05 | Voto privado e público com protocolo/garantias validados, incluindo unicidade entre modos e verificação do recibo |
 | R06 | Plebiscito de configuração inicial — nenhuma lei criada antes do setup |
@@ -352,9 +358,9 @@ Todos estão pendentes, sem testes executados. Os IDs R01–R26 foram mantidos. 
 | R10 | Período de debate com comentários, emendas e moderação |
 | R11 | Período de votação com reautenticação biométrica obrigatória |
 | R12 | Encerramento/apuração aplicam fórmulas e versões aprovadas, com casos de empate/abstenção/concorrência testados |
-| R13 | Isolamento total de dados entre jurisdições |
+| R13 | Isolamento entre países e políticas territoriais verificadas; leitura pública e participação entre níveis dependem das regras aprovadas na seção 13 |
 | R14 | Limite de propostas por cidadão por ano funcional e bloqueante |
-| R15 | Dashboard funcional para cidadão, visitante e Admin Master |
+| R15 | Dashboard funcional para cidadão e visitante; dashboard do Admin Master depende da definição da expansão global |
 | R16 | Sistema de notificações in-app e e-mail funcional |
 | R17 | Preferências de notificação configuráveis por cidadão |
 | R18 | Interface pública de listagem e resultados funcional; contrato externo separado somente quando definido |
@@ -365,7 +371,7 @@ Todos estão pendentes, sem testes executados. Os IDs R01–R26 foram mantidos. 
 | R23 | Conformidade com WCAG 2.1 AA |
 | R24 | Suporte a múltiplos idiomas (i18n) |
 | R25 | Ambiente local/CI reproduzível compila SSR/WASM e executa os checks definidos, sem resetar dados persistentes |
-| R26 | Frontend instalável como PWA no celular e desktop |
+| R26 | Frontend instalável como PWA no celular e desktop, sem modo offline ou fila local de ações eleitorais |
 
 ---
 
@@ -373,15 +379,16 @@ Todos estão pendentes, sem testes executados. Os IDs R01–R26 foram mantidos. 
 
 | Tema | Decisão necessária antes da feature afetada |
 | --- | --- |
-| País e implantação | Primeiro país/domínio, locale, VPS e carga-alvo |
-| Identidade e sessão | Provider, prova documental, liveness/matching, credenciais, recuperação e expiração/revogação |
+| Implantação no Brasil | Domínio, locale, fusos, VPS e carga-alvo; Brasil já definido como país inicial |
+| Identidade e sessão | Provider, prova documental, idade/elegibilidade, liveness/matching e falsos resultados, alternativa acessível, credenciais, TOTP, recuperação, expiração/revogação e validade/escopo/replay da reautenticação |
+| Território e participação | Vínculo de residência e participação municipal/estadual/nacional; alcance do isolamento, da leitura pública e da elegibilidade entre jurisdições |
 | Eleições | Eleitorado/snapshot, residência, fórmulas/arredondamento, abstenção, empate e zero votos válidos |
-| Setup | Quem inicia, regras do primeiro plebiscito, falha de quórum, autoridade operacional e vigência de meta-leis |
-| Propostas/debate | Consumo de quota, retirada de assinatura, edição/emenda após apoio, moderação e denúncia sem censura prévia arbitrária |
+| Setup | Regras por país ou por jurisdição e relação entre níveis; quem inicia, regras do primeiro plebiscito, falha de quórum, autoridade operacional para cadastro de jurisdições/atribuição de papéis e vigência de meta-leis |
+| Propostas/debate | Ano/fuso e consumo de quota, cancelamento, arquivamento, retirada/reassinatura, edição/emenda após apoio, conteúdo duplicado, reações a comentários, moderação e denúncia sem censura prévia arbitrária |
 | Sigilo e auditoria | Protocolo, ameaça, chaves, unicidade entre modos, provas/recibos e correlação de logs |
 | Operação e dados | Retenção por categoria, RPO/RTO, proteção de backup, atualização e restauração durante votação |
-| Interface e expansão | PWA/cache/offline, atendimento físico, notificações push, API externa e administração global |
+| Interface e expansão | PWA/atualização/cache técnico, notificações push, API externa, administração global e credenciamento de auditores; uso offline e participação física fora do escopo |
 
-Essas decisões não bloqueiam a fundação técnica sintética, mas impedem prometer os respectivos critérios de produção. Não resolvê-las por suposição: apresentar opções ao usuário. A ordem de trabalho está no [plano SDD](../development/sdd-plan.md); requisitos e tarefas da primeira fatia estão no [guia de fundação](../architecture/foundation-setup.md).
+Essas decisões não bloqueiam a fundação técnica sintética, mas impedem prometer os respectivos critérios de produção. Perguntar uma decisão por vez, com opções, e registrar a resposta antes de avançar; não resolver por suposição. A ordem de trabalho está no [plano SDD](../development/sdd-plan.md); requisitos e tarefas da primeira fatia estão no [guia de fundação](../architecture/foundation-setup.md).
 
-*Democracy Without Candidates — PRD v1.2.0 — 2026-10-12*
+*Democracy Without Candidates — PRD v1.2.1 — 2026-10-12*

@@ -1,14 +1,14 @@
 # Fundação técnica
 
-Atualizado em 2026-10-12. **Especificação e checklist futuros; nenhuma tarefa de implementação executada.** Este documento concentra a primeira entrega para evitar criar outro dossiê. As decisões aprovadas estão no [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-12. **Especificação e checklist futuros; nenhuma tarefa de implementação executada.** As decisões aprovadas estão no [plano SDD](../development/sdd-plan.md).
 
 ## Objetivo e escopo
 
 Comprovar a integração mínima de Leptos SSR/hidratação WASM, Axum/Tokio e TursoDB local em um pacote de aplicação Rust. Uma instância por país, um processo proprietário do banco e desenvolvimento em loopback.
 
-A fatia entrega inicialização validada, health check, migration de um dado sintético, persistência após restart e uma interação de navegador que usa uma server function. Não entrega identidade real, plebiscito, propostas, voto secreto ou capacidade de produção.
+A fatia entrega inicialização validada, health check, migration de um dado sintético, persistência após restart, interação hidratada via server function, E2E reproduzível, CI e smoke de carga. Não entrega identidade real, plebiscito, propostas, voto secreto ou capacidade de produção.
 
-Não criar dados de cidadãos reais. O país de teste deve estar claramente identificado; Brasil pode ser fixture, sem decidir o primeiro país de produção.
+Brasil é o país inicial. Usar dados sintéticos claramente identificados nos testes, sem dados de cidadãos reais. A configuração do país deve permitir reutilizar a aplicação em outras implantações.
 
 ## Pré-requisitos a verificar quando a execução for solicitada
 
@@ -20,20 +20,22 @@ Não criar dados de cidadãos reais. O país de teste deve estar claramente iden
 | Navegador/WebDriver | Compatibilidade com Fantoccini e uma sessão real |
 | TursoDB e armazenamento | Acesso ao motor real e caminhos distintos para persistência local e testes |
 
-A sessão anterior identificou Rust/Chrome e downloads temporários. Revalidar o ambiente; não tratar caminhos temporários como instalação atual. PNPM, NestJS, React e PostgreSQL não são pré-requisitos deste projeto. Nenhuma ferramenta será instalada nesta etapa documental.
+Verificar o ambiente no início da execução e registrar versões efetivamente usadas. Os comandos abaixo ainda são contratos futuros.
 
 ## Requisitos e critérios observáveis
 
-| ID | Requisito | Evidência exigida |
-| --- | --- | --- |
-| FND01 | Um pacote de aplicação com capacidades SSR e hydrate separadas | Servidor e WASM compilam; banco/segredos não fazem parte do navegador |
-| FND02 | Inicialização em loopback com configuração validada | URL real e health check com readiness limitada; configuração inválida falha claramente |
-| FND03 | Banco local TursoDB com migration versionada | Dado sintético gravado/lido pelo app e ainda presente após restart |
-| FND04 | Interação hidratada que usa endpoint de servidor | Navegador altera dado sintético e mostra resultado confirmado; ausência de erros bloqueantes de console/rede |
-| FND05 | Isolamento de teste | Testes criam bancos descartáveis; banco persistente do usuário não é apagado/resetado |
-| FND06 | Verificação reproduzível | Harness documentado, testes de persistência e um E2E Rust passam em execução real |
-| FND07 | Proteção de configuração e artefatos | Git ignora banco, segredos e relatórios privados; configuração de produção rejeita provedor de identidade de teste, se presente |
-| FND08 | Base de CI e carga | CI verifica builds/testes reproduzíveis; smoke Goose em release com dados sintéticos registra amostras e invariantes, sem prometer capacidade |
+As referências abaixo relacionam a fundação ao [PRD](../prd/prd.md#12-critérios-de-aceite); contribuição parcial não encerra o requisito de produto.
+
+| ID | Requisito | Evidência exigida | PRD relacionado |
+| --- | --- | --- | --- |
+| FND01 | Um pacote de aplicação com capacidades SSR e hydrate separadas | Servidor e WASM compilam; banco/segredos não fazem parte do navegador | R25, RNF12/13/15 |
+| FND02 | Inicialização em loopback com configuração validada | URL real e health check com readiness limitada; configuração inválida falha claramente | R25, RNF15 |
+| FND03 | Banco local TursoDB com migration versionada | Dado sintético gravado/lido pelo app e ainda presente após restart | R25, RNF13 |
+| FND04 | Interação hidratada que usa endpoint de servidor | Navegador altera dado sintético e mostra resultado confirmado; ausência de erros bloqueantes de console/rede | R25 |
+| FND05 | Isolamento de teste | Testes criam bancos descartáveis; banco persistente do usuário não é apagado/resetado | R25 |
+| FND06 | Verificação reproduzível | Harness documentado, testes de persistência e um E2E Rust passam em execução real | R25, RNF15 |
+| FND07 | Proteção de configuração e artefatos | Git ignora banco, segredos e relatórios privados; configuração de produção rejeita provedor de identidade de teste, se presente | R02, RNF10 — contribuição parcial |
+| FND08 | Base de CI e carga | CI verifica builds/testes reproduzíveis; smoke Goose em release com dados sintéticos registra amostras e invariantes, sem prometer capacidade | R25, RNF02/15 — smoke não demonstra capacidade |
 
 Erros de migration, banco indisponível, porta ocupada, timeout de readiness e falha de hidratação devem produzir falha verificável, sem substituir TursoDB por outro motor ou pular navegador silenciosamente. Readiness não deve expor detalhes privados.
 

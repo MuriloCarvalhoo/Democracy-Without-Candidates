@@ -8,16 +8,16 @@ O checkout contém README, LICENSE, AGENTS.md e documentos de produto, arquitetu
 
 | Documento existente | Responsabilidade |
 | --- | --- |
-| `README.md` | Entrada, estado real e navegação |
-| `docs/prd/prd.md` | Produto, critérios R01–R26 e requisitos não funcionais |
-| `docs/development/sdd-plan.md` | Decisões aprovadas, questões abertas e validação |
-| `docs/architecture/foundation-setup.md` | Especificação, tarefas e evidência pendente da fundação |
-| `docs/architecture/backend-architecture.md` | Servidor e casos de uso |
-| `docs/architecture/frontend-architecture.md` | Leptos, hidratação e experiência web |
-| `docs/architecture/database-structure.md` | Modelo conceitual e invariantes de persistência |
-| `docs/architecture/auth-rbac-flow.md` | Identidade, sessão e autorização |
-| `docs/wireframes/WIREFRAMES (3).md` | Fluxos e estados de tela |
-| `AGENTS.md` | Instruções para trabalho no repositório |
+| [README](../../README.md) | Entrada, estado real e navegação |
+| [PRD](../prd/prd.md) | Produto, critérios R01–R26, requisitos não funcionais e decisões pendentes |
+| [Plano SDD](../development/sdd-plan.md) | Decisões de arquitetura, fluxo e estratégia de validação |
+| [Fundação](foundation-setup.md) | Requisitos, contratos de comandos, tarefas e evidência da primeira entrega |
+| [Servidor](backend-architecture.md) | Processo, camadas e casos de uso |
+| [Interface](frontend-architecture.md) | Leptos, hidratação e experiência web |
+| [Banco](database-structure.md) | Modelo conceitual e invariantes de persistência |
+| [Identidade e autorização](auth-rbac-flow.md) | Sessão, permissões e critérios AUTH |
+| [Wireframes](../wireframes/wireframes.md) | Fluxos e estados de tela |
+| [AGENTS.md](../../AGENTS.md) | Instruções para trabalho no repositório |
 
 Atualizar esses documentos em vez de criar relatórios de análise ou repetir decisões em novos arquivos. A primeira especificação e checklist estão no guia de fundação. Novos artefatos de feature só devem surgir quando necessários ao trabalho solicitado.
 
@@ -62,12 +62,14 @@ Separar capacidades de SSR e hidratação no build. Regras do servidor não pode
 
 Cada país tem implantação, subdomínio, configuração e banco próprios, com um processo de aplicação. A instância não escolhe banco por país informado pelo navegador e não exige um catálogo global para funcionar.
 
-Dentro de um país existem jurisdições nacional, estadual e municipal. A elegibilidade e o escopo de acesso precisam considerar essa hierarquia; independência entre países não substitui autorização territorial dentro do país. Regras de residência e eleitorado estão abertas no PRD.
+A primeira implantação será no Brasil. Manter documentos de identidade, idioma e nomes dos níveis territoriais adaptáveis à configuração do país; critérios de elegibilidade e regras eleitorais precisam de especificação própria, sem presumir que as regras de um país servem para todos.
+
+No Brasil, o modelo prevê jurisdições nacional, estadual e municipal; outros países usam a hierarquia configurada para sua implantação. A elegibilidade e o escopo de acesso precisam considerar essa hierarquia; independência entre países não substitui autorização territorial dentro do país. As decisões territoriais estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes).
 
 ## Evolução e entrega
 
 Começar com a fundação mínima. Acrescentar identidade de teste, sessão/RBAC e setup antes do fluxo de leis; depois propostas, assinaturas e debate. Votação real e auditoria exigem resolver protocolo e regras eleitorais. Notificações, estatísticas, PWA e operação crescem conforme seus critérios.
 
-Não adicionar crates de domínio, filas, Redis, Kubernetes ou microsserviços sem necessidade demonstrada. O desenho anterior de PNPM, duas aplicações e banco por schema foi substituído; consultar Git apenas para histórico.
+Não adicionar crates de domínio, filas, Redis, Kubernetes ou microsserviços sem necessidade demonstrada.
 
 Não criar comandos Git destrutivos como parte do fluxo. Preservar alterações locais e usar `/usr/bin/git`; validação não autoriza commit, push ou publicação automática.

@@ -1,135 +1,97 @@
-# Approved SDD decisions and implementation plan
+# Decisões e plano de desenvolvimento SDD
 
-Date: 2026-10-12. Status: architecture and workflow approved by the user. Current scope: reconciliation of existing documentation only, as requested by the user. Do not scaffold the application, install more tools or run implementation tasks until the user requests execution. No application or test harness has been implemented.
+Atualizado em 2026-10-12. **Arquitetura e fluxo aprovados; aplicação não implementada.** O escopo atual é documentação. Executar a fundação, instalar ferramentas ou criar código exige solicitação de implementação.
 
-## Decision record
+## Registro de decisões
 
-| Topic | Approved decision | Consequence |
+| Tema | Decisão aprovada | Consequência |
 | --- | --- | --- |
-| Language | Rust for application logic in frontend, backend and test scenarios | Browser output still includes HTML/CSS and generated JavaScript/WASM glue |
-| Web framework | Leptos fullstack, SSR and WASM hydration | Server functions are the initial interface; no parallel complete REST API |
-| HTTP runtime | Axum integrated through Leptos, with Tokio | One application process and deployment; no separate backend service |
-| Architecture | Modular monolith, initially one application Cargo package | Domain and application rules remain separate from UI and persistence |
-| Database | Local TursoDB using the Rust `turso` crate | One process owns the persistent database; no PostgreSQL schema tenancy |
-| Countries | Independent subdomain, VPS, database and configuration per country; initially one | Same application reused across deployments; no global runtime database required for foundation |
-| SDD | Small Markdown specs inspired by OpenSpec, without mandatory CLI | One feature/change at a time; specification, tasks and evidence |
-| Agent instructions | One short root AGENTS.md | Add local instruction files only when a real exception appears |
-| Harness | Thin Justfile with dev/check/test/e2e/load commands | Same reproducible checks locally and in CI; commands are future deliverables |
-| Browser testing | Chrome DevTools MCP for inspection; Fantoccini/WebDriver for Rust regressions | Inspect a real browser and preserve repeatable critical flow tests |
-| Load testing | Goose scenarios in Rust against release builds | Early bounded smoke test; final campaign after functional/browser acceptance |
-| Current delivery | Correct existing documentation; no separate analysis reports | Approval of the plan is not authorization to start implementation in this stage |
+| Linguagem | Rust para lógica de aplicação e cenários de teste | A saída web inclui HTML/CSS e JavaScript/WASM gerado |
+| Framework web | Leptos fullstack, SSR e hidratação WASM | Server functions como interface inicial |
+| Runtime HTTP | Axum integrado ao Leptos, com Tokio | Um processo de aplicação e uma implantação |
+| Arquitetura | Monolito modular, inicialmente um pacote Cargo de aplicação | Domínio e aplicação separados de UI e persistência |
+| Banco | TursoDB local pela crate Rust `turso` | Um processo proprietário do banco persistente |
+| Países | Subdomínio, VPS, banco e configuração independentes por país; início no Brasil | Mesma aplicação configurável para outros países, sem banco global necessário à fundação |
+| Uso | Exclusivamente online, sem votação ou coleta de assinaturas em meio físico | PWA instalável não implica funcionamento offline |
+| SDD | Especificações Markdown enxutas inspiradas no OpenSpec, sem CLI obrigatório | Uma feature ou mudança por vez, com requisitos, tarefas e evidência |
+| Instruções de agentes | Um AGENTS.md curto na raiz | Arquivos locais somente para exceções reais |
+| Harness de validação | Justfile fino com comandos locais e de CI | Contratos na [fundação](../architecture/foundation-setup.md#contratos-futuros-dos-comandos); ainda não implementados |
+| Navegador | Chrome DevTools MCP para inspeção; Fantoccini/WebDriver para regressões Rust | Interação real após hidratação e testes reproduzíveis |
+| Carga | Cenários Goose em Rust contra builds release | Smoke limitado na fundação; campanha final após aceitação funcional |
 
-All following implementation descriptions are future work. The illustrative tree in the repository guide and the command contracts below do not describe existing application files. The previous NestJS/React/PostgreSQL architecture is superseded; current guides have been reconciled with these decisions. Git preserves the previous documents. Unresolved product requirements remain open, as listed in the PRD.
+Este é o registro da arquitetura vigente; desenhos anteriores permanecem no Git. A [estrutura do repositório](../architecture/repository_structure.md) distingue documentos existentes de arquivos futuros.
 
-## Product decisions still open
+## Decisões de produto pendentes
 
-1. First country and its production domain, locale and deployment configuration. Brazil may be used as a clearly labelled development fixture, not an implicit production decision.
-2. Real identity/biometric provider, identity proofing, recovery and protected biometric template handling. A hash alone does not settle biometric matching or uniqueness.
-3. Private voting protocol, key custody, unlinkability, public/private double-vote prevention and what a receipt proves. Select and validate an established protocol; do not invent a cryptographic scheme.
-4. Electoral semantics: electorate snapshot date, exact majority/quorum formulas, abstentions, ties and changes of residence. Existing PRD examples are input, not resolutions of missing edge cases.
-5. VPS resources, measured target load, backup/recovery objectives and final performance thresholds. The p95 limits below are the working acceptance interpretation; validate on representative hardware before claiming capacity.
+O [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes) concentra as perguntas de produto e expansão. Elas não bloqueiam uma fundação com dados sintéticos, mas precisam ser resolvidas antes das features afetadas. Apresentar opções ao usuário; não inferir regras eleitorais, identidade ou garantias criptográficas.
 
-These questions do not block a future technical foundation. They must be resolved before implementing the affected product guarantees. A development demonstration must be identified as such. Before resolving an open question or making a new decision, ask the user with short options; do not infer electoral or security rules. The expanded product decision list is in [PRD section 13](../prd/prd.md#13-decisões-de-produto-pendentes).
+## Fluxo escolhido
 
-## Chosen workflow
+O fluxo usa a distinção do OpenSpec entre especificação vigente e mudança proposta, começando com Markdown. O CLI é opcional. Spec Kit é uma alternativa válida, mas seus artefatos e gates adicionais não são necessários ao fluxo inicial escolhido. Não instalar dois sistemas SDD concorrentes nem criar um serviço de orquestração.
 
-Use a small spec-driven workflow based on OpenSpec's distinction between current specifications and proposed changes. Start with Markdown in the repository; the CLI is optional. Do not install two competing SDD systems or build an agent orchestration service.
+Decisões de arquitetura ficam aqui; requisitos, tarefas e evidência da primeira entrega ficam na [fundação](../architecture/foundation-setup.md). Para features posteriores, atualizar o documento relevante e criar especificação separada somente quando necessário. Não criar arquivos vazios em `specs/current` alegando comportamento implementado; arquivamento deve refletir o que foi executado.
 
-OpenSpec supports exploration, a reviewable proposal, implementation tasks and archival that updates the current specifications. Spec Kit is a valid alternative, including a shorter feature workflow, but its constitution and additional quality gates introduce more artifacts than this first version needs. This preference is an assessment for this project, not a universal ranking of tools.
+### Ciclo de uma feature
 
-The harness means the reproducible environment and commands used to build, start, inspect and verify the application. It is not another production service.
+1. Especificar comportamento observável, limites e falhas; identificar decisões pendentes.
+2. Revisar requisitos e ordenar tarefas por dependência. Aprovação cobre trabalho rotineiro dentro do escopo; novas decisões exigem opções ao usuário.
+3. Implementar uma fatia executável e testes de comportamento, incluindo casos negativos e concorrentes críticos.
+4. Executar os checks pertinentes e inspecionar os fluxos afetados em navegador real.
+5. Registrar evidência e limitações, atualizar a especificação e encerrar apenas critérios satisfeitos.
 
-## Existing documents and future artifacts
+Exemplo: duas submissões concorrentes de um eleitor sintético elegível não podem produzir duas cédulas aceitas. Testar tentativas distintas e replay da mesma tentativa separadamente, conforme idempotência definida. Desabilitar um botão não demonstra essa garantia.
 
-Architecture decisions stay in this document; the foundation requirements, task checklist and evidence status are in [foundation-setup.md](../architecture/foundation-setup.md). Update these existing documents instead of creating another ADR, review report or foundation dossier that duplicates them.
+## Instruções e harness
 
-[repository_structure.md](../architecture/repository_structure.md) describes the current document map and future code structure. There is no application Cargo package, Justfile, source tree, migrations, CI, browser tests or load package yet.
+O AGENTS.md mantém stack, fronteiras, fluxo e requisitos de verificação, incluindo navegação por CodeGraph. Acrescentar instruções por diretório somente para uma exceção real.
 
-For later features, keep observable requirements, tasks and evidence together in the relevant existing document where practical. Create a separate feature spec only when the work needs it; never create empty `specs/current` entries claiming implemented behavior. Current behavior must be backed by execution evidence. Archival updates must reflect the actual implementation, not just a plan.
+O harness é o ambiente e os comandos reproduzíveis de build, inicialização e verificação; não é um serviço de produção. Usar `just` como executor fino, com a [interface única de comandos](../architecture/foundation-setup.md#contratos-futuros-dos-comandos) local e em CI. Dependências ausentes devem causar falha explícita, sem substituir o banco ou pular o navegador. Fixar toolchain Rust e lockfile; configuração de infraestrutura e código gerado para o navegador não alteram a decisão por lógica Rust.
 
-The active PRD and guides now describe the Rust stack. API capabilities, environment acceptance and setup order have been reconciled; identity, electoral rules, cryptographic protocol, global administration and offline behavior remain explicitly open. Preserving a proposed product goal does not establish its feasibility or implementation.
+Cada execução usa banco descartável e fixtures sintéticas próprios. Aguardar readiness por health check com timeout, sem sleep fixo. Encerrar somente processos criados pela execução. Artefatos não devem conter segredos ou dados pessoais reais.
 
-## Feature loop
+## Estratégia de validação
 
-1. Specify observable behavior, boundaries and failure cases; identify unresolved product/security decisions.
-2. Review the spec and create a short dependency-ordered task list. Existing approval covers routine implementation within its scope. Ask the user with concise options whenever an unresolved requirement or a new decision needs resolution.
-3. Implement one runnable slice and add tests that verify behavior, including critical negative/concurrent cases.
-4. Execute the relevant checks, start the application and inspect affected flows in the browser.
-5. Record evidence and remaining limitations, update current specs and close only criteria actually satisfied.
+### Domínio e persistência
 
-Example acceptance criterion: given an eligible synthetic voter and an open synthetic election, two concurrent submissions cannot produce two accepted ballots; a retried accepted submission has defined idempotent behavior. Test distinct concurrent attempts and replay of the same attempt separately. Do not infer this guarantee from the UI disabling a button.
+Testes Rust verificam regras aprovadas, aritmética eleitoral e transições de estado. Usar testes de propriedades onde acrescentem confiança, como fronteiras aritméticas e transições inválidas. Integração usa TursoDB real para migrations, unicidade, atomicidade, rollback, restart e submissões concorrentes.
 
-## AGENTS.md and harness
+Testar autorização também pela rede. Eleições precisam referenciar versão do setup e eleitorado definidos conforme o PRD; testar a disputa entre aceitação de voto e encerramento. Fixtures não resolvem regras abertas.
 
-Keep one concise root AGENTS.md with stack, code boundaries, spec workflow, commands and verification requirements. Preserve CodeGraph navigation instructions. Add directory-specific files only if a genuine local exception appears.
+### Navegador
 
-Approved command interface, to be implemented and verified during foundation:
+Chrome DevTools MCP complementa os testes com inspeção de telas, hidratação, teclado, viewport mobile, expiração de sessão e console/rede.
 
-| Command | Contract |
-| --- | --- |
-| `just dev` | Apply development migrations, start Leptos locally and print the actual URL; no implicit destructive reset |
-| `just check` | Format/lint checks and compilation of server + hydration WASM targets |
-| `just test` | Domain and integration tests against disposable actual TursoDB databases |
-| `just e2e` | Start an isolated app/browser environment, execute critical browser flows, clean up owned processes, fail on unmet assertions |
-| `just load` | Run bounded Goose scenarios against a test release build, produce report and fail on violated acceptance limits |
+Fantoccini/WebDriver executa regressões Rust com navegador/driver compatíveis. O scaffold deve comprovar uma interação após hidratação. Acrescentar login, propostas, assinaturas, votação e resultados conforme as features existam, usando seletores semânticos estáveis e esperas limitadas.
 
-Use `just` only as a thin command runner. Keep the same commands locally and in CI. Bootstrap checks must report missing tools, not silently substitute another database or skip the browser. Pin the Rust toolchain and dependency lockfile. Production code and test scenarios remain Rust; command/config files and generated browser glue are infrastructure artifacts.
+Mocks de identidade permitem testes determinísticos, devem ser rotulados e rejeitados em produção. Não validam biometria, unicidade real ou sigilo eleitoral; esses critérios exigem provider e protocolo reais.
 
-Each test run has its own database path and synthetic fixtures. App readiness uses a bounded health check, not a fixed sleep. Process cleanup must only stop processes created by that run. Generated reports exclude secrets and real personal data.
+### Carga e aceitação final
 
-## Test strategy
+Goose usa sessões, CSRF e transporte real das server functions. Validar a resposta de aplicação: HTTP bem-sucedido não comprova aceitação do voto. Fixtures devem fornecer eleitores elegíveis distintos; repetir uma identidade não representa carga normal.
 
-### Domain and persistence
+Executar carga mista, rampa até saturação, votação concentrada, duplicidades/replays e execução sustentada com restart/recuperação. O smoke da fundação verifica o harness; a campanha final depende de aceitação funcional e de navegador.
 
-Use ordinary Rust tests for electoral arithmetic, state transitions and authorization. Add property-based tests only where they improve confidence, such as arithmetic boundaries and invalid state transitions. Use the actual TursoDB crate for migrations, uniqueness, atomicity, rollback, persistence after restart and concurrent submissions.
+Interpretação de trabalho do RNF02: p95 de listagem abaixo de 2 segundos e de aceitação de voto abaixo de 3 segundos, com menos de 1% de falhas inesperadas, sob carga documentada. Esses limites não demonstram capacidade; carga-alvo e condições finais permanecem pendentes no PRD. Separar negativas esperadas de falhas inesperadas. Duplicidade, perda de voto confirmado e resultado inconsistente são inaceitáveis.
 
-Test authorization through the network interface as well as application functions. Pin setup version and electorate snapshot for an election; specify exact quorum, majority, abstention and tie semantics before implementing them. Test the race between vote acceptance and election closure.
+Registrar carga oferecida, throughput, p50/p95/p99, erros, CPU/RAM, disco, conflitos/retries e invariantes finais do banco. Identificar commit/estado do checkout, build, hardware, dataset, duração e modo do provider. Amostras vazias ou nenhum voto aceito não sustentam afirmações de latência.
 
-### Browser
+Usar release. Sondagens iniciais de 10, 50 e 100 usuários simulados são experimentos, não promessa de capacidade. Avaliar saturação do gerador; antes de afirmar capacidade da implantação, repetir em VPS equivalente com gerador separado.
 
-Use the available Chrome DevTools MCP for interactive inspection: rendered screens, hydration, keyboard navigation, mobile viewport, session expiry and console/network errors. This inspection supplements reproducible tests; it does not replace them.
+## Ordem de implementação futura
 
-For repeatable E2E scenarios written in Rust, use Fantoccini with WebDriver and a compatible browser/driver. The first scaffold must prove one real interaction after hydration. Grow coverage around login, proposal lifecycle, signatures, voting and results as those features become available. Browser assertions should use stable semantic labels/selectors and bounded waits, not timing sleeps.
+1. **Fundação:** scaffold Leptos/Axum/TursoDB, health check, migrations, harness/CI, um E2E e smoke de carga. Estimativa: 2–4 horas com dependências compatíveis; 4–8 horas se a integração exigir diagnóstico.
+2. **Identidade e setup:** sessões, RBAC, provider sintético, bootstrap e bloqueio de leis antes da adoção. Integração real requer decisões do PRD.
+3. **Propostas:** rascunhos, publicação, assinaturas, debate e transições persistidas com prazo.
+4. **Votação e auditoria:** resolver protocolo/regras, aceitação e fechamento, recibos e verificação de resultados. Sem estimativa confiável para desenho e validação de segurança.
+5. **Aceitação:** release, regressões de navegador, restauração e campanha final de carga. Campanha base estimada em 1–2 horas com cenários/fixtures prontos; correções são adicionais.
 
-Biometrics and election cryptography require dedicated real-provider/protocol validation. Development mock providers enable deterministic UI/backend tests but must be clearly labelled and blocked in production. Do not describe a development ballot model as implementing the PRD's promise of unlinkability.
+A fundação só termina quando seus [critérios e checklist](../architecture/foundation-setup.md#requisitos-e-critérios-observáveis), incluindo CI e smoke, tiverem evidência. Isso não demonstra prontidão biométrica, eleitoral ou operacional do produto. Nenhuma tarefa de implementação foi executada.
 
-### Load, at the final acceptance stage
+## Referências
 
-Use Goose: scenarios are Rust code, including realistic session state, CSRF requirements and the actual server-function transport. HTTP success alone is not a vote accepted; parse and validate the application response. Fixtures must include enough distinct eligible voters for the scenario. Do not use one identity repeatedly as the normal throughput workload.
-
-Final scenarios: normal mixed browsing/writing load, ramp to saturation, concentrated voting on one proposal, simultaneous duplicates/replays, and sustained execution with restart/recovery checks. A small early smoke run verifies the load harness; the final performance campaign happens after functional/browser acceptance.
-
-Working acceptance limits derived from the PRD: p95 listing duration under 2 seconds and p95 vote acceptance under 3 seconds at a documented offered load, with under 1% unexpected request failures. The plan adopts these percentiles as a working interpretation; the original PRD did not specify percentiles or offered load. Duplicate ballots, lost acknowledged ballots or inconsistent results are never acceptable. Expected denials are reported separately from unexpected failures. Final target load and measurement conditions remain to be defined.
-
-Report achieved throughput, attempted load, p50/p95/p99 latency, errors, CPU/RAM, disk behavior, transaction conflicts/retries and final database invariants. Capture commit, build mode, machine specs, dataset, scenario duration and provider mode. Do not make latency assertions on empty samples or zero accepted votes.
-
-Compile in release mode. Initial bounded experiments can use 10, 50 and 100 simulated users, increasing only while there is capacity. These are starting probes, not a capacity promise. Local client and server share hardware; measure generator saturation and repeat on an equivalent staging VPS from a separate generator before asserting deployment capacity.
-
-## Implementation order
-
-Execution is deferred by the user's current instruction. The next implementation delivery, when requested, is foundation only; approval does not imply that the entire identity/voting application can be built with unresolved security/product decisions.
-
-1. Foundation: execute the requirements/checklist in the existing foundation guide: Leptos/Axum/TursoDB scaffold, health check, migrations, command runner, CI, one browser E2E and a bounded load smoke. Estimated 2–4 hours of execution if dependencies/browser work; 4–8 hours if toolchain integration needs diagnosis.
-2. Identity and setup: sessions, RBAC, test identity provider and setup lifecycle, including bootstrap and law-creation blocking before adoption; specify real identity integration separately.
-3. Proposal flow: drafts, publication, signatures, debate and persisted scheduled transitions.
-4. Voting and audit: settle cryptographic protocol/privacy requirements, enforce acceptance/closure invariants, receipts and verifiable results. Security-sensitive design and validation have no reliable estimate yet.
-5. Acceptance: release build, full browser regressions, backup restoration, final load campaign and evidence-based capacity report. A baseline campaign can take 1–2 hours after all scenarios and fixtures are ready; fixes are additional.
-
-The first foundation slice is complete only when a clean local workflow starts the application, TursoDB data survives restart, server/WASM builds pass, and a browser interaction plus its repeatable E2E test succeed. The whole application remains incomplete until its product and security acceptance criteria are met.
-
-## Current state and next executable step
-
-- Completed: initial review/research, architecture choice, SDD/harness plan, root AGENTS.md, and reconciliation of existing README/PRD/architecture/wireframes with the Rust architecture. Foundation requirements and a pending checklist now live in the existing foundation guide.
-- Not implemented: Cargo application, migrations, Justfile, CI, browser tests and load scenarios. No application tests or load tests have run.
-- Environment inspection found Rust and Chrome. Initial tool downloads were moved out of the repository to a temporary directory when execution was deferred; environment prerequisites must be checked again when work resumes.
-- First future implementation: execute the existing foundation checklist for the smallest local Leptos/Axum/TursoDB slice. Its acceptance is build + persistent database + real hydrated browser interaction, not voting or biometric readiness. No checklist item has been executed.
-- User-facing next step: request execution of the foundation when ready. Until then, work remains documentation only.
-
-## Research sources from the architecture planning session
-
-- OpenSpec workflow: https://openspec.dev/docs/quickstart
-- GitHub Spec Kit workflow: https://github.github.io/spec-kit/quickstart.html
-- Official AGENTS.md guidance: https://learn.chatgpt.com/docs/agent-configuration/agents-md
-- Leptos testing guidance: https://book.leptos.dev/testing.html
-- Fantoccini Rust WebDriver client: https://github.com/jonhoo/fantoccini
-- Goose Rust load tests: https://book.goose.rs/
+- [OpenSpec: fluxo de mudança](https://openspec.dev/docs/quickstart)
+- [Spec Kit: fluxo SDD](https://github.github.io/spec-kit/quickstart.html)
+- [Orientações para AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+- [Leptos: testes](https://book.leptos.dev/testing.html)
+- [Fantoccini: cliente Rust WebDriver](https://github.com/jonhoo/fantoccini)
+- [Goose: testes de carga](https://book.goose.rs/)

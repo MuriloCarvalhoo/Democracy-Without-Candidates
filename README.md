@@ -4,6 +4,8 @@ Projeto de democracia direta para cidadãos proporem, debaterem e votarem decis�
 
 **Em planejamento. Ainda não há aplicação disponível para uso.**
 
+Implantação inicial no Brasil, com configuração por país para reutilizar a aplicação em outros países. Uso exclusivamente online, sem votação ou coleta de assinaturas em meio físico.
+
 ## Funcionalidades previstas
 
 - Propostas de leis, coleta de assinaturas e debate.

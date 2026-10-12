@@ -1,6 +1,6 @@
 # Arquitetura da interface web
 
-Atualizado em 2026-10-12. Interface aprovada: Leptos em Rust, SSR e hidratação WASM. Ainda não há telas executáveis. Ver [PRD](../prd/prd.md), [wireframes](../wireframes/WIREFRAMES%20%283%29.md) e [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-12. Interface aprovada: Leptos em Rust, SSR e hidratação WASM. Ainda não há telas executáveis. Ver [PRD](../prd/prd.md), [wireframes](../wireframes/wireframes.md) e [plano SDD](../development/sdd-plan.md).
 
 ## Renderização e estado
 
@@ -51,13 +51,13 @@ Nos fluxos eleitorais distinguir encerramento, inelegibilidade, voto já aceito,
 
 Manter mobile-first, navegação por teclado, HTML semântico, labels, foco em diálogos, contraste e feedback para leitores de tela. O alvo de produto permanece WCAG 2.1 AA; conformidade depende de inspeção e testes reais, não da escolha do framework.
 
-Preparar textos e formatação para i18n. Português, inglês e espanhol são idiomas previstos; primeiro país, locale inicial e configuração de fuso permanecem abertos. Horários exibidos devem permitir compreender o prazo aplicável e não redefinir o encerramento do servidor.
+Preparar textos e formatação para i18n. Português, inglês e espanhol são idiomas previstos; configuração inicial depende das [decisões do PRD](../prd/prd.md#13-decisões-de-produto-pendentes). Horários exibidos devem permitir compreender o prazo aplicável e não redefinir o encerramento do servidor.
 
-## PWA e offline
+## PWA e conexão
 
-Instalabilidade permanece requisito de produto. Manifest, cache, atualização e comportamento offline ainda não foram projetados ou validados para Leptos; PWA não integra o critério mínimo da fundação.
+Instalabilidade permanece requisito de produto; PWA não integra o critério mínimo da fundação. A aplicação funciona exclusivamente online, inclusive quando instalada.
 
-Definir quais recursos públicos podem ser lidos offline, como limpar cache sensível após logout e como distinguir dados antigos. Ações críticas não podem ser anunciadas como aceitas apenas por gravação local. Votação offline ou atendimento em pontos físicos exige desenho próprio, sem assumir que uma PWA resolve elegibilidade e sigilo. Push notifications são evolução futura; in-app/e-mail continuam no PRD.
+Sem conexão, indicar indisponibilidade e permitir nova tentativa quando a conexão retornar, sem fila local de assinaturas ou votos. Ações críticas só são confirmadas após aceitação persistida no servidor. Não oferecer votação ou coleta de assinaturas em meio físico. Cache técnico de assets não constitui modo offline; definir atualização e limpeza de dados sensíveis. Push notifications são evolução futura; in-app/e-mail continuam no PRD.
 
 ## Validação e performance
 
@@ -65,4 +65,4 @@ Compilar separadamente servidor e WASM. Na primeira fatia, executar uma interaç
 
 Testes nativos não validam foco, câmera, hidratação ou cache no navegador. Novas telas devem ter casos de carregamento, erro, sessão e permissões, além do caminho feliz.
 
-Medir tamanho do WASM/assets, tempo de carregamento e custo das consultas antes de otimizações. Paginação e consultas limitadas vêm do servidor; cache não deve mascarar mudança de fase eleitoral. A stack React/Vite/Zustand/Axios e suas ferramentas de teste anteriores foram substituídas; o histórico permanece no Git.
+Medir tamanho do WASM/assets, tempo de carregamento e custo das consultas antes de otimizações. Paginação e consultas limitadas vêm do servidor; cache não deve mascarar mudança de fase eleitoral.

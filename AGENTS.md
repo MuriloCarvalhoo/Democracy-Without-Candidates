@@ -3,7 +3,8 @@
 ## Architecture approved by the user
 
 - Application logic is Rust: Leptos SSR + WASM hydration, integrated Axum, Tokio and TursoDB via the Rust `turso` crate.
-- One independent deployment, subdomain and VPS per country; initially only one country. One application process owns the local persistent database.
+- One independent deployment, subdomain and VPS per country; initially Brazil, with country-specific configuration for reuse elsewhere. One application process owns the local persistent database.
+- Online-only product scope. No offline participation, physical voting or physical signature collection. PWA installation does not imply offline operation.
 - Start with one application package, organized into domain, application, infrastructure and feature modules. Add crates or services only for a demonstrated need.
 - Keep business rules and authorization in server-side application/domain code. Leptos server functions are network endpoints, not trusted calls.
 - The previous NestJS/React/PostgreSQL architecture is superseded. Current guides must match the approved Rust architecture; Git preserves the previous documents.
@@ -11,7 +12,7 @@
 ## Communication and documentation
 
 - Always use the installed `i-have-adhd` skill for user-facing responses unless the user disables it.
-- Keep responses short and concise. Ask the user with explicit options whenever a doubt or a new decision needs resolution; do not settle open product questions by assumption.
+- Keep responses short and concise. Ask one pending question at a time, with explicit options; do not settle open product questions by assumption.
 - Keep documentation and code concise and simple. README presents the project, usage, documentation, contribution and license; session history belongs in ai-memory and technical detail in the relevant docs. Do not duplicate them in README.
 - Update existing documents. Do not create standalone analysis/review reports or duplicate decision records. Keep foundation requirements and tasks in `docs/architecture/foundation-setup.md` and architecture decisions in `docs/development/sdd-plan.md`.
 

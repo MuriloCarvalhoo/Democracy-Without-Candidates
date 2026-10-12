@@ -36,13 +36,13 @@ A organização de módulos está no [guia do repositório](repository_structure
 | Auditoria | Eventos apropriados à privacidade, acesso de auditores e verificação de integridade |
 | Dashboard e notificações | Consultas paginadas, estatísticas públicas e notificações in-app/e-mail conforme preferências |
 
-Não existe catálogo de países ou autoridade global necessária ao runtime inicial. As funções de Admin Master do PRD são escopo futuro a revisar, sem criar banco global ou acesso automático a outros países.
+Não existe catálogo de países ou autoridade global necessária ao runtime inicial. As funções de Admin Master dependem das [decisões de expansão do PRD](../prd/prd.md#13-decisões-de-produto-pendentes), sem banco global ou acesso automático a outros países.
 
 ## Autorização e setup
 
 Aplicar sessão, status do cidadão, permissão, jurisdição, propriedade do recurso, fase da proposta e reautenticação na aplicação. O frontend apenas comunica essas condições.
 
-Administração operacional não autoriza mudar quórum, prazos ou percentuais por edição direta. A mudança eleitoral exige meta-lei aprovada e histórico de versão. Especificar os poderes de bootstrap, cadastro de jurisdições, atribuição de papéis e acesso de auditores antes de implementar essas ações.
+Administração operacional não autoriza mudar quórum, prazos ou percentuais por edição direta. A mudança eleitoral exige meta-lei aprovada e histórico de versão. Bootstrap e autoridade operacional dependem das [decisões de setup e expansão](../prd/prd.md#13-decisões-de-produto-pendentes).
 
 ## Persistência e concorrência
 
@@ -68,4 +68,4 @@ Registrar falhas, conflitos e transições com dados mínimos. Não registrar au
 
 A [fundação](foundation-setup.md) deve comprovar SSR/WASM, persistência após restart e interação hidratada. Depois testar permissões pela rede, fases inválidas, concorrência, rollback e retomada de transições em bancos descartáveis.
 
-Implementar sessão/RBAC e setup antes das leis. Propostas, assinaturas e debate podem avançar conforme suas regras aprovadas. Votação com privacidade só avança após o desenho eleitoral; carga final e restauração vêm após aceitação funcional. O roteiro NestJS/TypeORM anterior foi substituído e está no histórico Git.
+Implementar sessão/RBAC e setup antes das leis. Propostas, assinaturas e debate podem avançar conforme suas regras aprovadas. Votação com privacidade só avança após o desenho eleitoral; carga final e restauração vêm após aceitação funcional.

@@ -4,9 +4,9 @@ Atualizado em 2026-10-12. Banco aprovado: TursoDB local pela crate Rust `turso`.
 
 ## País, processo e armazenamento
 
-Uma instância de aplicação possui um banco persistente local do país configurado. Cada país terá implantação, VPS e banco independentes. O desenho PostgreSQL por schema e catálogo global foi substituído; não executar os SQLs antigos como migrations TursoDB.
+Uma instância de aplicação possui um banco persistente local do país configurado. Cada país terá implantação, VPS e banco independentes.
 
-No país, jurisdições formam uma hierarquia nacional/estadual/municipal. Queries e casos de uso precisam validar esse escopo e elegibilidade. O banco de uma instância não deve ser escolhido a partir de um país arbitrário enviado pelo navegador.
+Jurisdições formam a hierarquia configurada para o país, inicialmente nacional/estadual/municipal no Brasil. Queries e casos de uso precisam validar esse escopo e elegibilidade. O banco de uma instância não deve ser escolhido a partir de um país arbitrário enviado pelo navegador.
 
 Dados de produção, desenvolvimento e teste usam caminhos separados. Testes criam bancos descartáveis com o motor real e nunca resetam banco persistente do usuário. Somente o processo da aplicação possui o banco de produção; backup e manutenção precisam de procedimento compatível com esse modelo.
 
@@ -33,7 +33,7 @@ Os campos abaixo descrevem necessidades, não um schema final nem dados que deva
 
 Separar dados pessoais de projeções públicas. Não armazenar imagem biométrica bruta. A proposta de `biometric_hash UNIQUE` não é uma solução especificada para matching ou unicidade de pessoas. Unicidade documental/e-mail e residência entre jurisdições precisam de escopo definido, sem permitir cadastro duplicado apenas por mudança territorial.
 
-As entidades globais `countries`, `platform_admins` e `global_auditors` do desenho anterior não são necessárias à fundação. Cadastro/autoridade global continua uma questão de expansão do PRD, sem banco global ativo agora.
+Entidades de administração global não integram a fundação; dependem das [decisões de expansão do PRD](../prd/prd.md#13-decisões-de-produto-pendentes).
 
 ## Setup, propostas e participação
 
@@ -66,9 +66,9 @@ O produto prevê SIM/NÃO/ABSTENÇÃO, voto privado por padrão e público por c
 | Recibo | O que comprova, como verificar inclusão e quais informações revela |
 | Resultado | Snapshot do eleitorado, contagens, regras/versões, quórum, maioria e encerramento verificável |
 
-Não considerar duas constraints separadas para voto público e hash privado como garantia conjunta de um voto por pessoa. O documento anterior também vinculava votos a `biometric_reauth_id` e recibos a `user_id`; esses vínculos não estão aprovados para cédulas privadas e precisam de análise de correlação no protocolo.
+Não considerar duas constraints separadas para voto público e hash privado como garantia conjunta de um voto por pessoa. Vínculos de cédulas privadas/recibos com identidade ou reautenticação exigem análise de correlação no protocolo.
 
-Um campo `zkp_proof`, um hash anônimo ou ocultar `user_id` não especifica sigilo. Não definir DDL eleitoral definitivo ou anunciar voto privado implementado com base nesses placeholders. O resultado `tie` aparece nos wireframes, mas sua regra e relação com os status do PRD permanecem abertas.
+Um campo `zkp_proof`, um hash anônimo ou ocultar `user_id` não especifica sigilo. Não definir DDL eleitoral definitivo ou anunciar voto privado implementado com base nesses placeholders. Regras de empate e demais decisões eleitorais estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes).
 
 ## Invariantes e transações a verificar
 
@@ -92,7 +92,7 @@ Dados sensíveis incluem documentos, biometria, credenciais/segredos TOTP, sess�
 
 ## Migrations, fixtures e operação
 
-Toda mudança estrutural usa migration versionada, separada de fixtures. Fixtures sintéticas podem incluir país/jurisdição, permissões e setup de teste, sem adotar implicitamente o primeiro país ou regras de produção. Não criar admin/credencial fixa de produção por seed.
+Toda mudança estrutural usa migration versionada, separada de fixtures. Fixtures sintéticas podem incluir Brasil/jurisdição, permissões e setup de teste, sem adotar regras de produção por seed. Identificadores de documento devem considerar a configuração do país, sem exigir CPF em todas as implantações. Não criar admin/credencial fixa de produção por seed.
 
 Versionar/aplicar migrations de forma reproduzível, tratando execução repetida, falha parcial e compatibilidade com dados existentes. Não alterar schema manualmente nem destruir dados para fazer um teste passar.
 

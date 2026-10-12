@@ -4,9 +4,9 @@ Atualizado em 2026-10-12. Desenho para Rust/Leptos/Axum; nenhuma autenticação 
 
 ## Limites do desenho
 
-O produto pretende comprovar identidade e impedir contas/votos duplicados, com biometria facial e segundo fator TOTP. O provedor real, a prova documental, matching, liveness, recuperação e tratamento de falsos resultados ainda não estão definidos. Biometria e 2FA não são, por si, evidência de unicidade eleitoral.
+O produto pretende comprovar identidade e impedir contas/votos duplicados, com biometria facial e segundo fator TOTP. As decisões de identidade e sessão estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes). Biometria e 2FA não são, por si, evidência de unicidade eleitoral.
 
-Não escolher integração real a partir de exemplos antigos. `auth-face` foi uma referência da proposta anterior; compatibilidade, capacidades e garantias não foram validadas. Provider de teste permite cenários determinísticos, nunca comprova identidade real e deve ser explicitamente habilitado e rejeitado em produção.
+Provider de teste permite cenários determinísticos, nunca comprova identidade real e deve ser explicitamente habilitado e rejeitado em produção.
 
 ## Papéis e limites
 
@@ -19,11 +19,11 @@ Não escolher integração real a partir de exemplos antigos. `auth-face` foi um
 | COUNTRY_ADMIN | Operação da instância e gestão territorial autorizada; sem alterar regras eleitorais diretamente |
 | MASTER_ADMIN | Funções de plataforma previstas no PRD; autoridade global e implantação ainda a revisar |
 
-Os seis papéis continuam no produto pretendido. Não criar acesso global, banco global ou aprovação de cidadão pelo simples recebimento de um nome de role do cliente. O bootstrap de administradores e auditores precisa de procedimento definido antes da operação real.
+Admin Master permanece na expansão pretendida; não é requisito da instância inicial. Não criar acesso global, banco global ou aprovação de cidadão pelo simples recebimento de um nome de role do cliente. Bootstrap de administradores e credenciamento de auditores dependem das decisões do PRD.
 
 Permissões seguem `recurso:ação`, por exemplo `proposal:create`, `proposal:sign`, `proposal:vote`, `profile:update` e `audit:read`. Escopo territorial, autoria e fase da proposta também são condições obrigatórias. Uma permissão nominal não autoriza um cidadão inelegível a votar.
 
-A antiga permissão administrativa genérica de edição de setup foi removida do desenho ativo. Administradores podem executar tarefas operacionais autorizadas; alteração de parâmetros eleitorais exige a meta-lei aprovada prevista em R07. O bootstrap do primeiro plebiscito permanece a especificar.
+Administradores podem executar tarefas operacionais autorizadas; alteração de parâmetros eleitorais exige a meta-lei aprovada prevista em R07. O bootstrap do primeiro plebiscito permanece a especificar.
 
 ## Cadastro e status
 
@@ -33,13 +33,13 @@ A antiga permissão administrativa genérica de edição de setup foi removida d
 4. Configurar segundo fator e política de recuperação conforme o fluxo aprovado.
 5. Ativar CITIZEN apenas após as verificações necessárias; fixtures sintéticas permanecem rotuladas como teste.
 
-Idade mínima, validade de documentos, unicidade entre jurisdições e mudança de residência precisam ser resolvidas antes dos critérios eleitorais reais. Não persistir imagem facial bruta; forma de referência/template protegido depende do provedor. Não usar igualdade de um hash como especificação de matching biométrico.
+Elegibilidade e vínculo territorial dependem das decisões do PRD. Não persistir imagem facial bruta; forma de referência/template protegido depende do provedor. Não usar igualdade de um hash como especificação de matching biométrico.
 
 ## Login, sessão e recuperação
 
-O PRD antigo usava e-mail/face/TOTP, enquanto guia e wireframes incluíam senha. Essa divergência permanece decisão aberta, sem impor senha ou passwordless agora.
+Senha versus fluxo sem senha permanece decisão aberta no PRD.
 
-Definir o contrato de sessão antes de implementar: credenciais, armazenamento, expiração, renovação, revogação, logout, proteção de requisições e recuperação após perda de dispositivo/TOTP. JWT era uma escolha da stack anterior e não é obrigatório na arquitetura Rust; o formato de sessão ainda será decidido. Não incluir documentos, material biométrico, segredo TOTP ou dados eleitorais privados em tokens ou payloads públicos.
+Definir o contrato de sessão antes de implementar: credenciais, armazenamento, expiração, renovação, revogação, logout, proteção de requisições e recuperação após perda de dispositivo/TOTP. O formato de sessão ainda será decidido. Não incluir documentos, material biométrico, segredo TOTP ou dados eleitorais privados em tokens ou payloads públicos.
 
 Segredos do segundo fator exigem proteção e gestão de chaves especificadas. Definir replay de TOTP, limite de tentativas, troca de dispositivo e recuperação; não adiar recuperação enquanto se promete acesso de produção completo.
 
@@ -68,22 +68,22 @@ Mensagens devem permitir corrigir credenciais, sessão expirada e reautenticaç�
 
 ## Critérios de aceitação pendentes
 
-Os identificadores anteriores são preservados; AUTH04/05 agora verificam o contrato de sessão, sem impor JWT.
+Os IDs AUTH01–AUTH12 são estáveis. A coluna PRD relaciona critérios aos [requisitos do produto](../prd/prd.md#12-critérios-de-aceite); um critério isolado não encerra esses requisitos. Todos aguardam implementação e evidência.
 
-| ID | Critério futuro e evidência necessária |
-| --- | --- |
-| AUTH01 | Cadastro válido funciona; entradas inválidas e falhas do provider não ativam a conta |
-| AUTH02 | Cadastro inicia em PENDING_CITIZEN e não permite ações eleitorais |
-| AUTH03 | Só verificações aprovadas permitem CITIZEN; teste sintético não valida provider real |
-| AUTH04 | Login estabelece sessão válida conforme contrato definido; falha não estabelece sessão |
-| AUTH05 | Sessão/payloads públicos não contêm dados sensíveis; expiração e revogação são testadas |
-| AUTH06 | RBAC nega chamadas de rede protegidas sem autorização |
-| AUTH07 | Permissão é verificada com escopo, autoria e condições do recurso |
-| AUTH08 | Ação crítica rejeita reautenticação ausente, inválida, expirada ou para outra ação |
-| AUTH09 | Voto exige identidade/elegibilidade e face + 2FA conforme provider/protocolo aprovados |
-| AUTH10 | Assinatura exige reautenticação prevista e não aceita duplicidade |
-| AUTH11 | Criar proposta exige reautenticação, setup e limites aplicáveis |
-| AUTH12 | Eventos relevantes são auditáveis sem expor segredos ou comprometer voto privado |
+| ID | Critério futuro e evidência necessária | PRD relacionado |
+| --- | --- | --- |
+| AUTH01 | Cadastro válido funciona; entradas inválidas e falhas do provider não ativam a conta | R02 |
+| AUTH02 | Cadastro inicia em PENDING_CITIZEN e não permite ações eleitorais | R02, R03 |
+| AUTH03 | Só verificações aprovadas permitem CITIZEN; teste sintético não valida provider real | R02, R03 |
+| AUTH04 | Login estabelece sessão válida conforme contrato definido; falha não estabelece sessão | R02, R19 |
+| AUTH05 | Sessão/payloads públicos não contêm dados sensíveis; expiração e revogação são testadas | R19, RNF10 |
+| AUTH06 | RBAC nega chamadas de rede protegidas sem autorização | R03, R19 |
+| AUTH07 | Permissão é verificada com escopo, autoria e condições do recurso | R03, R13, R19 |
+| AUTH08 | Ação crítica rejeita reautenticação ausente, inválida, expirada ou para outra ação | R09, R11, R19 |
+| AUTH09 | Voto exige identidade/elegibilidade e face + 2FA conforme provider/protocolo aprovados | R02, R05, R11 |
+| AUTH10 | Assinatura exige reautenticação prevista e não aceita duplicidade | R09, R19 |
+| AUTH11 | Criar proposta exige reautenticação, setup e limites aplicáveis | R06, R14, R19 |
+| AUTH12 | Eventos relevantes são auditáveis sem expor segredos ou comprometer voto privado | R20, R21, RNF10 |
 
 ## Sequência e validação
 

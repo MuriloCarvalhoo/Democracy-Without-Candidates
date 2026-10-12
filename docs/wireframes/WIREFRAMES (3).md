@@ -1,24 +1,27 @@
 # WIREFRAMES — Democracia Sem Candidatos
 
 ## 📌 FINALIDADE DO DOCUMENTO
-Este documento define wireframes de nível enterprise alinhados 100% ao PRD, incluindo:
+Atualizado em 2026-10-12. Esboços textuais do produto futuro, alinhados à arquitetura Rust/Leptos do [PRD](../prd/prd.md). Nenhuma tela foi implementada ou validada em navegador. Este documento descreve:
 - Fluxos completos de usuário
 - Estados de tela (carregamento, erro, vazio)
 - Lógica multijurisdicional
 - Interações de segurança
-- Casos extremos (edge cases)
+- Casos de falha e decisões ainda pendentes
+
+Não resolver regras pela aparência da tela. As decisões abertas estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes); renderização/hidratação e validação estão no [guia da interface](../architecture/frontend-architecture.md).
 
 ---
 
 # 🌍 1. FLUXO DE PAÍS E JURISDIÇÃO
 
-## 1.1 Seleção de País
-[ Brasil ] [ Portugal ] [ Argentina ]
+## 1.1 Instância do País
+
+O subdomínio e a configuração identificam o país da implantação. Seleção entre países e catálogo global são fluxos futuros a revisar, sem banco global necessário à instância inicial. O primeiro país de produção ainda não foi escolhido.
 
 ## Estados:
-- Carregando países
-- Nenhum país disponível
-- Erro: seleção obrigatória
+- Carregando configuração pública da instância
+- Instância indisponível
+- Configuração de desenvolvimento identificada como teste
 
 ---
 
@@ -27,7 +30,7 @@ Este documento define wireframes de nível enterprise alinhados 100% ao PRD, inc
 ## 2.1 Login
 E-mail
 [______]
-Senha
+Credencial conforme contrato de login a decidir
 [______]
 
 [ Entrar ]
@@ -36,6 +39,9 @@ Estados:
 - Credenciais inválidas
 - Carregando
 - Conta bloqueada
+- Sessão expirada ou reautenticação necessária
+
+Senha versus fluxo sem senha ainda é decisão aberta. A tela não define esse contrato.
 
 ---
 
@@ -56,13 +62,16 @@ Estados:
 ## 2.3 Validação Biométrica
 
 [ Escanear Rosto ]
-[ Impressão Digital ]
+[ Alternativa de acessibilidade/identidade a definir com o provider ]
 
 Estados:
 - Sucesso
 - Falha (tentar novamente)
 - Dispositivo não compatível
 - Tempo esgotado (timeout)
+- Permissão de câmera negada
+
+Provider real, matching/liveness, recuperação e eventual suporte a impressão digital ainda não foram aprovados. Verificação sintética deve ser rotulada e proibida em produção.
 
 ---
 
@@ -72,6 +81,9 @@ Acionada por:
 - Votação
 - Assinatura
 - Criação de proposta
+- Alteração de dados sensíveis/privacidade e participação em mudança de setup
+
+A validação ocorre no servidor e deve estar vinculada à ação/recurso conforme contrato a definir.
 
 ---
 
@@ -87,6 +99,8 @@ Estados:
 - Votação aberta
 - Concluído
 - Quórum não atingido
+
+Antes de adotar setup, não criar leis. Quem inicia o plebiscito, suas regras e o caminho após falha de quórum permanecem pendentes; o administrador não altera parâmetros eleitorais diretamente.
 
 ---
 
@@ -138,12 +152,15 @@ Estados:
 Validações:
 - Campos obrigatórios
 - Limite de propostas por usuário/ano
-- Detecção de conteúdo duplicado
+- Detecção de conteúdo duplicado, com política ainda a especificar
 
 Estados:
 - Rascunho salvo
 - Publicação realizada com sucesso
 - Erro de validação
+- Setup ainda não adotado
+
+Consumo de quota por rascunho/publicação, edição após apoio e vigência das regras permanecem pendentes.
 
 ---
 
@@ -153,7 +170,7 @@ Barra de progresso
 Tempo restante
 
 Estados:
-- Assinatura removida
+- Assinatura removida: cenário proposto; retirada/reassinatura ainda exigem regra aprovada
 - Limite atingido
 - Prazo expirado
 
@@ -171,6 +188,8 @@ Estados:
 - Abuso reportado
 - Discussão bloqueada (thread travada)
 
+Moderação, denúncias, reação a comentários e efeito de emendas sobre o texto apoiado/votado precisam de regras explícitas; esses elementos visuais não decidem a política.
+
 ---
 
 # 🗳️ 10. VOTAÇÃO
@@ -184,8 +203,13 @@ Privacidade:
 
 Estados:
 - Voto já registrado
-- Voto registrado com sucesso
+- Voto registrado com sucesso, somente após aceitação persistida pelo servidor
 - Falha ao registrar voto
+- Sessão/reautenticação expirada
+- Votação encerrada ou eleitor inelegível
+- Timeout com resultado ainda desconhecido
+
+O modo privado é o padrão pretendido, com público por consentimento. Protocolo, unicidade entre modos e recibo permanecem pendentes. Em resultado desconhecido, consulta/retry depende do contrato de idempotência; não anunciar sucesso local ou duplicar o efeito.
 
 ---
 
@@ -198,7 +222,9 @@ Exibição:
 
 Estados:
 - Quórum não atingido
-- Empate
+- Empate: resultado proposto, com semântica ainda a definir
+
+Exibir versão de regras e referência do eleitorado conforme especificação. Fórmulas, arredondamentos e zero votos válidos permanecem pendentes.
 
 ---
 
@@ -237,7 +263,7 @@ Opções:
 # ⚙️ 15. PAINEL ADMINISTRATIVO
 
 Funcionalidades:
-- Gerenciamento de países
+- Operação da instância; gerenciamento global de países permanece escopo futuro a revisar
 - Estatísticas de usuários
 - Saúde do sistema
 
@@ -251,19 +277,21 @@ Estados:
 
 Dados:
 - Logs de atividade
-- Cadeia de hash (hash chain)
+- Evidências de integridade conforme mecanismo a escolher; hash chain é candidato, não garantia validada
 - Verificação de integridade
 
 Estados:
-- Verificado
+- Evidência verificada conforme protocolo/mecanismo definido
 - Alerta de integridade
+- Dados restritos ao escopo do auditor
+
+Não publicar identidade, biometria ou correlação com cédula privada. Ainda não há verificador implementado.
 
 ---
 
 # 🔗 17. VISUALIZAÇÃO DE API (MODO DESENVOLVEDOR)
 
-- Lista de endpoints
-- Pré-visualização de requisição e resposta
+As server functions Leptos são a interface inicial. Inspeção de requisição/resposta será usada no desenvolvimento; portal e contrato de API externa são escopo futuro a especificar.
 
 ---
 
@@ -278,4 +306,4 @@ Estados:
 
 # 🚀 CONCLUSÃO
 
-Este documento representa uma estrutura de wireframes pronta para produção, alinhada a sistemas de nível enterprise e ao escopo completo do PRD.
+Estes esboços precisam de implementação e testes de hidratação, mobile, teclado, leitores de tela, erros de rede/sessão e estados críticos. PWA/cache/offline também exigem especificação; nenhum estado de tela aqui comprova prontidão para produção.

@@ -1,369 +1,92 @@
-# FOUNDATION-SETUP.md
+# Fundação técnica
 
-# Democracy Without Candidates
-## Foundation Setup Guide
+Atualizado em 2026-10-12. **Especificação e checklist futuros; nenhuma tarefa de implementação executada.** Este documento concentra a primeira entrega para evitar criar outro dossiê. As decisões aprovadas estão no [plano SDD](../development/sdd-plan.md).
 
-> Versão: 1.0.0  
-> Status: Foundation Phase
+## Objetivo e escopo
 
----
+Comprovar a integração mínima de Leptos SSR/hidratação WASM, Axum/Tokio e TursoDB local em um pacote de aplicação Rust. Uma instância por país, um processo proprietário do banco e desenvolvimento em loopback.
 
-# 1. Objetivo
+A fatia entrega inicialização validada, health check, migration de um dado sintético, persistência após restart e uma interação de navegador que usa uma server function. Não entrega identidade real, plebiscito, propostas, voto secreto ou capacidade de produção.
 
-Este documento define todo o processo inicial de configuração do ambiente de desenvolvimento do projeto Democracy Without Candidates.
+Não criar dados de cidadãos reais. O país de teste deve estar claramente identificado; Brasil pode ser fixture, sem decidir o primeiro país de produção.
 
-O objetivo é garantir:
+## Pré-requisitos a verificar quando a execução for solicitada
 
-- Padronização do ambiente
-- Facilidade de onboarding
-- Inicialização rápida do projeto
-- Compatibilidade entre desenvolvedores
-- Estrutura consistente do monorepo
+| Item | Verificação necessária |
+| --- | --- |
+| Rust/Cargo e alvo WASM | Fixar toolchain e comprovar os dois builds |
+| Leptos/Axum/Tokio/`turso` | Selecionar versões compatíveis e fixar dependências no lockfile |
+| Build Leptos e `just` | Verificar ferramentas reais e documentar bootstrap reproduzível |
+| Navegador/WebDriver | Compatibilidade com Fantoccini e uma sessão real |
+| TursoDB e armazenamento | Acesso ao motor real e caminhos distintos para persistência local e testes |
 
----
+A sessão anterior identificou Rust/Chrome e downloads temporários. Revalidar o ambiente; não tratar caminhos temporários como instalação atual. PNPM, NestJS, React e PostgreSQL não são pré-requisitos deste projeto. Nenhuma ferramenta será instalada nesta etapa documental.
 
-# 2. Pré-requisitos
+## Requisitos e critérios observáveis
 
-Antes de iniciar o projeto, é necessário possuir instalado:
+| ID | Requisito | Evidência exigida |
+| --- | --- | --- |
+| FND01 | Um pacote de aplicação com capacidades SSR e hydrate separadas | Servidor e WASM compilam; banco/segredos não fazem parte do navegador |
+| FND02 | Inicialização em loopback com configuração validada | URL real e health check com readiness limitada; configuração inválida falha claramente |
+| FND03 | Banco local TursoDB com migration versionada | Dado sintético gravado/lido pelo app e ainda presente após restart |
+| FND04 | Interação hidratada que usa endpoint de servidor | Navegador altera dado sintético e mostra resultado confirmado; ausência de erros bloqueantes de console/rede |
+| FND05 | Isolamento de teste | Testes criam bancos descartáveis; banco persistente do usuário não é apagado/resetado |
+| FND06 | Verificação reproduzível | Harness documentado, testes de persistência e um E2E Rust passam em execução real |
+| FND07 | Proteção de configuração e artefatos | Git ignora banco, segredos e relatórios privados; configuração de produção rejeita provedor de identidade de teste, se presente |
+| FND08 | Base de CI e carga | CI verifica builds/testes reproduzíveis; smoke Goose em release com dados sintéticos registra amostras e invariantes, sem prometer capacidade |
 
-| Ferramenta | Versão Recomendada |
-|---|---|
-| Node.js | 24.x ou 26.x |
-| PNPM | Última versão |
-| Docker | Última versão |
-| Docker Compose | Última versão |
-| Git | Última versão |
+Erros de migration, banco indisponível, porta ocupada, timeout de readiness e falha de hidratação devem produzir falha verificável, sem substituir TursoDB por outro motor ou pular navegador silenciosamente. Readiness não deve expor detalhes privados.
 
----
+## Contratos futuros dos comandos
 
-# 3. Instalação do PNPM
+Não existe Justfile nem qualquer comando abaixo neste checkout. Implementá-los e registrar o comportamento real durante a fundação.
 
-Instalar globalmente:
+| Comando futuro | Contrato |
+| --- | --- |
+| `just dev` | Aplicar migrations de desenvolvimento sem reset destrutivo, iniciar em loopback e informar a URL |
+| `just check` | Formatação/lint e compilação dos alvos servidor e WASM |
+| `just test` | Regras implementadas e integração com TursoDB real em bancos descartáveis |
+| `just e2e` | App/browser isolados, interação hidratada, waits limitadas e cleanup só de processos do teste |
+| `just load` | Goose em Rust contra release isolado, relatório e falha quando critérios definidos forem violados |
 
-```bash
-npm install -g pnpm
-```
+Verificar explicitamente dependências ausentes. CI deve usar os mesmos comandos, não uma validação menor apresentada como equivalente.
 
-Verificar instalação:
+## Checklist de execução futura
 
-```bash
-pnpm -v
-```
+### Ambiente e scaffold
 
----
+- [ ] Verificar ferramentas, versões e compatibilidade de navegador/driver.
+- [ ] Criar pacote mínimo Leptos/Axum/Tokio com configuração SSR/hydrate e toolchain/lockfile.
+- [ ] Configurar loopback, health check e mensagens de inicialização/falha.
+- [ ] Definir `.gitignore` e caminhos para banco, segredos e artefatos.
 
-# 4. Estrutura Inicial do Projeto
+### Persistência e interação
 
-Estrutura base do monorepo:
+- [ ] Integrar `turso`, migration e dado sintético mínimo.
+- [ ] Testar gravação/leitura, rollback/falhas relevantes e persistência após restart.
+- [ ] Criar tela mínima e server function para a interação de fundação.
+- [ ] Separar configuração de teste e produção; rejeitar mock em produção se houver provider.
 
-```txt
-Democracy-Without-Candidates/
-│
-├── apps/
-│   ├── api/
-│   └── web/
-│
-├── packages/
-│
-├── infra/
-│
-├── docs/
-│
-├── docker-compose.yml
-├── package.json
-├── pnpm-workspace.yaml
-└── tsconfig.base.json
-```
+### Validação e evidência
 
----
+- [ ] Implementar Justfile e CI com os contratos descritos acima.
+- [ ] Compilar SSR e WASM e executar testes com TursoDB real.
+- [ ] Inspecionar interação hidratada em navegador real, console/rede, teclado e viewport mobile.
+- [ ] Executar e registrar E2E Rust reproduzível com Fantoccini/WebDriver.
+- [ ] Executar smoke Goose em release e verificar o dado persistido após a carga.
 
-# 5. Inicialização do Monorepo
+## Estado da evidência
 
-## Criar package.json raiz
+| Verificação | Estado |
+| --- | --- |
+| Scaffold, toolchain e dependências | Não implementados/não verificados nesta entrega |
+| Builds SSR/WASM | Não executados |
+| Migration, persistência e restart | Não executados |
+| Navegador e E2E | Não executados |
+| CI e smoke de carga | Não implementados/não executados |
 
-```bash
-pnpm init
-```
+Quando executados, registrar aqui commit/estado do checkout, versões, comandos, resultados, limitações e caminhos dos artefatos úteis. Não criar um relatório separado para repetir esta checklist. Campos pendentes não são checks aprovados.
 
----
+## Ordem após a fundação
 
-## Criar pnpm-workspace.yaml
-
-```yaml
-packages:
-  - 'apps/*'
-  - 'packages/*'
-```
-
----
-
-# 6. Inicialização do Backend (NestJS)
-
-## Criar aplicação backend
-
-```bash
-pnpm create nest apps/api
-```
-
----
-
-## Instalar dependências principais
-
-```bash
-pnpm add @nestjs/typeorm typeorm pg
-```
-
----
-
-## Dependências recomendadas
-
-```bash
-pnpm add class-validator class-transformer
-pnpm add @nestjs/config
-pnpm add @nestjs/jwt passport passport-jwt
-pnpm add bcrypt
-```
-
----
-
-# 7. Inicialização do Frontend (React PWA)
-
-## Criar aplicação React
-
-```bash
-pnpm create vite apps/web --template react-ts
-```
-
----
-
-## Instalar dependências base
-
-```bash
-cd apps/web
-
-pnpm add react-router-dom
-pnpm add axios
-pnpm add zustand
-pnpm add react-hook-form
-```
-
----
-
-## Configurar PWA
-
-```bash
-pnpm add vite-plugin-pwa
-```
-
----
-
-# 8. Configuração Docker
-
-Estrutura recomendada:
-
-```txt
-infra/docker/
-│
-├── api/
-├── web/
-├── postgres/
-└── nginx/
-```
-
----
-
-# 9. Docker Compose
-
-Serviços iniciais:
-
-| Serviço | Porta |
-|---|---|
-| React Web | 3000 |
-| NestJS API | 3333 |
-| PostgreSQL | 5432 |
-| PgAdmin | 5050 |
-
----
-
-# 10. Exemplo docker-compose.yml
-
-```yaml
-version: '3.9'
-
-services:
-  api:
-    build:
-      context: .
-      dockerfile: infra/docker/api/Dockerfile
-    ports:
-      - '3333:3333'
-    depends_on:
-      - postgres
-
-  web:
-    build:
-      context: .
-      dockerfile: infra/docker/web/Dockerfile
-    ports:
-      - '3000:3000'
-
-  postgres:
-    image: postgres:16
-    restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: democracy
-    ports:
-      - '5432:5432'
-
-  pgadmin:
-    image: dpage/pgadmin4
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - '5050:80'
-```
-
----
-
-# 11. Configuração TypeScript Base
-
-## tsconfig.base.json
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "CommonJS",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "baseUrl": "."
-  }
-}
-```
-
----
-
-# 12. Configuração ESLint
-
-Objetivos:
-
-- Padronização de código
-- Organização
-- Qualidade
-- Prevenção de erros
-
-Recomendado:
-
-- ESLint
-- Prettier
-- Husky
-- Lint-Staged
-
----
-
-# 13. Estrutura de ENV
-
-## Arquivo .env.example
-
-```env
-NODE_ENV=development
-
-API_PORT=3333
-WEB_PORT=3000
-
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USER=postgres
-DATABASE_PASSWORD=postgres
-DATABASE_NAME=democracy
-
-JWT_SECRET=change_this_secret
-```
-
----
-
-# 14. Ordem Recomendada de Configuração
-
-## Foundation Phase
-
-### Etapa 1
-- Criar monorepo
-- Configurar PNPM
-
-### Etapa 2
-- Criar backend NestJS
-- Criar frontend React
-
-### Etapa 3
-- Configurar Docker
-- Configurar PostgreSQL
-
-### Etapa 4
-- Configurar TypeScript
-- Configurar ESLint
-
-### Etapa 5
-- Estruturar arquitetura MVC
-- Criar módulos principais
-
----
-
-# 15. Módulos Prioritários
-
-Primeiros módulos do backend:
-
-- auth
-- users
-- countries
-- jurisdictions
-- rbac
-
----
-
-# 16. Ordem Recomendada de Desenvolvimento
-
-## Foundation
-- Infra
-- Docker
-- Banco
-- Configuração base
-
-## Core
-- Auth
-- JWT
-- RBAC
-- Usuários
-
-## Business
-- Proposals
-- Voting
-- Debate
-
-## Advanced
-- Auditoria
-- Blockchain
-- ZKP
-
----
-
-# 17. Objetivo da Foundation Phase
-
-A Foundation Phase existe para garantir:
-
-- Estrutura sólida
-- Arquitetura limpa
-- Escalabilidade futura
-- Segurança organizacional
-- Facilidade de manutenção
-
-Antes do desenvolvimento avançado do sistema.
-
----
-
-# Democracy Without Candidates
-## Foundation Setup Guide
+Identidade de teste e sessão/RBAC; setup e seus bloqueios; propostas/assinaturas/debate; votação/auditoria após resolver o protocolo; aceitação operacional com restauração e carga final. A fundação comprova integração técnica e não encerra os critérios de aceitação do produto.

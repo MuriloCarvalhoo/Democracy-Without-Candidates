@@ -10,7 +10,7 @@ Atualizado em 2026-10-12. Esboços textuais do produto futuro, alinhados à arqu
 - Interações de segurança
 - Casos de falha e decisões ainda pendentes
 
-Não resolver regras pela aparência da tela. As decisões abertas estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes); renderização/hidratação e validação estão no [guia da interface](../architecture/frontend-architecture.md).
+Não resolver regras pela aparência da tela. As decisões restantes foram delegadas e estão como propostas para revisão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes); renderização/hidratação e validação estão no [guia da interface](../architecture/frontend-architecture.md).
 
 ---
 
@@ -34,10 +34,12 @@ O subdomínio e a configuração identificam o país da implantação, inicialme
 
 E-mail
 [______]
-Credencial conforme contrato de login a decidir
+Senha
 [______]
 
 [ Entrar ]
+
+Sem opção “manter conectado” e sem persistência de login entre usos. Sessão expira após 15 minutos sem atividade; solicitar novo login, sem reenviar automaticamente ações pendentes.
 
 Estados:
 
@@ -46,22 +48,31 @@ Estados:
 - Conta bloqueada
 - Sessão expirada ou reautenticação necessária
 
-Senha versus fluxo sem senha ainda é decisão aberta. A tela não define esse contrato.
+Após validar e-mail/senha, exigir verificação facial e código TOTP antes de estabelecer sessão. Informar falha sem revelar contas de terceiros. Perda do TOTP: oferecer entrada de código de recuperação de uso único, mantendo e-mail/senha e rosto. Senha esquecida: informar e-mail, validar rosto + TOTP e definir nova senha, sem envio de e-mail. Falhas não alteram a senha; endereço continua bloqueado.
 
 ---
 
 ### 2.2 Cadastro
 
-Nome completo
-Documento de identidade conforme configuração do país (ex.: CPF no Brasil)
-Data de nascimento
+Nome (obrigatório)
+E-mail (obrigatório)
+Senha (obrigatória)
+CEP (obrigatório no Brasil)
+[ Buscar endereço ]
+Estado, cidade, bairro e logradouro preenchidos pelo BrasilAPI
+País identificado pela instância
 
 [ Continuar ]
 
+Confirmar o endereço antes de concluir: após cadastro, ele fica bloqueado para alteração nesta versão. Não pedir número ou complemento nesta versão. Não exigir confirmação de e-mail para ativação; biometria e TOTP continuam no fluxo. Fornecer códigos de recuperação TOTP de uso único no cadastro, orientando guardar em local seguro. CEPs genéricos e demais requisitos de elegibilidade ainda serão especificados.
+
 Estados:
 
-- Documento inválido
-- Restrição de idade
+- Campo obrigatório ausente ou inválido
+- Buscando CEP
+- CEP inválido ou não encontrado
+- Provedor desativado, indisponível ou timeout
+- Endereço/território inválido ou não resolvido
 - Conta duplicada
 
 ---
@@ -111,7 +122,7 @@ Estados:
 - Concluído
 - Quórum não atingido
 
-Antes de adotar setup, não criar leis. Quem inicia o plebiscito, suas regras e o caminho após falha de quórum permanecem pendentes; o administrador não altera parâmetros eleitorais diretamente.
+Antes de adotar setup, não criar leis. As [propostas do SDD](../development/sdd-plan.md#decisões-delegadas-para-revisão) definem início pelo Admin País, pacote sugerido e leis bloqueadas após falha/rejeição; o administrador não altera parâmetros eleitorais diretamente.
 
 ---
 
@@ -170,7 +181,7 @@ Validações:
 
 - Campos obrigatórios
 - Limite de propostas por usuário/ano
-- Detecção de conteúdo duplicado, com política ainda a especificar
+- Aviso de conteúdo duplicado, sem bloqueio automático — proposta para revisão
 
 Estados:
 
@@ -179,7 +190,7 @@ Estados:
 - Erro de validação
 - Setup ainda não adotado
 
-Consumo de quota por rascunho/publicação, edição após apoio e vigência das regras permanecem pendentes.
+Propostas para revisão: quota na publicação, texto imutável após publicação e regras novas apenas para futuras eleições, conforme o SDD.
 
 ---
 
@@ -190,7 +201,7 @@ Tempo restante
 
 Estados:
 
-- Assinatura removida: cenário proposto; retirada/reassinatura ainda exigem regra aprovada
+- Assinatura retirada/reassinada somente na coleta — proposta para revisão
 - Limite atingido
 - Prazo expirado
 
@@ -201,7 +212,7 @@ Estados:
 Funcionalidades:
 
 - Comentários encadeados (threads)
-- Votos positivos/negativos (upvote/downvote)
+- Reações a comentários fora da versão inicial — proposta para revisão
 - Emendas e sugestões de alteração
 
 Estados:
@@ -247,9 +258,9 @@ Exibição:
 Estados:
 
 - Quórum não atingido
-- Empate: resultado proposto, com semântica ainda a definir
+- Empate: Rejeitada com motivo empate — proposta para revisão
 
-Exibir versão de regras e referência do eleitorado conforme especificação. Fórmulas, arredondamentos e zero votos válidos permanecem pendentes.
+Exibir versão de regras e referência do eleitorado conforme especificação. Fórmulas/arredondamentos e rejeição com zero votos válidos seguem propostas do SDD, ainda sem execução.
 
 ---
 
@@ -278,6 +289,8 @@ Estados:
 
 - Visualização pública
 - Visualização privada
+
+Endereço cadastrado é privado e aparece somente para leitura ao titular; não oferecer ação de alteração nesta versão.
 
 ---
 

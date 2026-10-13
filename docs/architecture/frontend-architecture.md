@@ -22,17 +22,25 @@ O [mapa de telas do PRD](../prd/prd.md#11-mapa-de-telas-31-telas) é a referênc
 | Features | Propostas, assinaturas, debate, setup, perfil, votação e auditoria |
 | Visualização | Estatísticas agregadas e resultados com apresentação acessível |
 
-Não criar design system ou pacotes independentes antecipadamente. CSS e organização visual serão escolhidos conforme necessidades das telas; nenhuma biblioteca de estilo foi aprovada.
+Não criar design system ou pacotes independentes antecipadamente. Proposta para revisão: CSS simples e componentes locais, sem biblioteca de estilo obrigatória.
 
 ## Transporte e segurança
 
 Formulários e ações usam inicialmente server functions Leptos, delegando às regras da aplicação. Sucesso de transporte não basta: apresentar o resultado confirmado da operação de domínio.
 
-Ocultar botões e redirecionar rotas melhora a experiência, mas o servidor deve revalidar cada chamada. Não aceitar permissões, país ou confirmação biométrica apenas do estado do navegador. A estratégia de sessão será especificada no [guia de autenticação](auth-rbac-flow.md); JWT não é requisito técnico resolvido.
+Ocultar botões e redirecionar rotas melhora a experiência, mas o servidor deve revalidar cada chamada. Não aceitar permissões, país ou confirmação biométrica apenas do estado do navegador. A sessão fica no servidor e o navegador usa cookie de sessão HttpOnly, Secure em produção HTTPS, conforme o [guia de autenticação](auth-rbac-flow.md). Não armazenar JWT/identificador de sessão em localStorage nem tentar ler o cookie por JavaScript.
 
-Não persistir documentos, material biométrico, segredos TOTP ou votos privados em armazenamento local. Proteger renderização de conteúdo de usuários e definir políticas de sessão, CSRF e conteúdo antes das features afetadas. Reautenticação deve ter validade e vínculo à ação definidos no servidor.
+Login identifica a conta por e-mail e exige senha, rosto e TOTP. Cadastro exige e-mail, senha, nome e endereço, sem documento nacional. Após gravação inicial, endereço é exibido somente para leitura; o servidor também rejeita alterações. Não oferecer “manter conectado” nem persistir credenciais de login entre usos. Após 15 minutos sem atividade, a sessão expira no servidor e a interface solicita novo login, sem reaplicar ações críticas silenciosamente. Não persistir senha, material biométrico, segredos TOTP ou votos privados em armazenamento local. Proteger renderização de conteúdo de usuários e definir políticas de sessão, CSRF e conteúdo antes das features afetadas. Reautenticação deve ter validade e vínculo à ação definidos no servidor.
+
+## Preenchimento de endereço
+
+No cadastro brasileiro, informar CEP e buscar pelo servidor usando o provedor habilitado. Exibir `state`, `city`, `neighborhood` e `street` preenchidos automaticamente; país identificado pela instância. `service` e `ibge` são dados de persistência, sem campos editáveis de formulário. Não oferecer campos de número ou complemento nesta versão.
+
+Mostrar busca em curso, CEP inválido/não encontrado e serviço indisponível. Se o CEP mudar antes do cadastro, invalidar o resultado anterior e ignorar respostas antigas; não preencher com a resposta de outro CEP. Sem provedor habilitado ou sem território resolvido, não anunciar endereço confirmado. Após o cadastro, manter o bloqueio de alteração.
 
 ## Estados observáveis
+
+Funcionalidades desativadas por flags da instância não oferecem ações na interface. O estado vem do servidor, que também rejeita chamadas diretas. Se a configuração mudar após reinício entre exibição e envio, apresentar indisponibilidade conforme o estado efetivo definido no [guia do servidor](backend-architecture.md#feature-flags-por-instância).
 
 | Situação | Comportamento a especificar/testar |
 | --- | --- |
@@ -51,7 +59,7 @@ Nos fluxos eleitorais distinguir encerramento, inelegibilidade, voto já aceito,
 
 Manter mobile-first, navegação por teclado, HTML semântico, labels, foco em diálogos, contraste e feedback para leitores de tela. O alvo de produto permanece WCAG 2.1 AA; conformidade depende de inspeção e testes reais, não da escolha do framework.
 
-Preparar textos e formatação para i18n. Português, inglês e espanhol são idiomas previstos; configuração inicial depende das [decisões do PRD](../prd/prd.md#13-decisões-de-produto-pendentes). Horários exibidos devem permitir compreender o prazo aplicável e não redefinir o encerramento do servidor.
+Preparar textos e formatação para i18n. Proposta: pt-BR na versão inicial, estrutura pronta para i18n e inglês/espanhol preservados como expansão, conforme o SDD. Horários exibidos devem permitir compreender o prazo aplicável e não redefinir o encerramento do servidor.
 
 ## PWA e conexão
 

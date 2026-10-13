@@ -1,7 +1,7 @@
 # Democracy Without Candidates
 ## Product Requirements Document (PRD)
 
-> **Versão:** 1.2.1 | **Atualização:** 2026-10-12 | **Status:** Especificação; aplicação não implementada
+> **Versão:** 1.3.0 | **Atualização:** 2026-10-12 | **Status:** Especificação; aplicação não implementada
 
 Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). Os critérios abaixo são requisitos futuros, sem evidência de implementação. As [decisões pendentes](#13-decisões-de-produto-pendentes) precisam ser resolvidas antes das features afetadas.
 
@@ -29,14 +29,14 @@ Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). Os critérios a
 
 O **Democracy Without Candidates** é uma plataforma web multi-país de democracia direta digital que permite a qualquer cidadão autenticado propor, debater e votar leis e decisões coletivas — sem intermediários, representantes ou candidatos. O sistema elimina a figura do candidato e do partido, devolvendo ao cidadão o poder de legislar diretamente.
 
-O produto prevê autenticação biométrica facial com segundo fator TOTP, privacidade configurável e regras definidas por plebiscito inicial (setup). **Uma pessoa = uma conta e um voto por eleição** é requisito a demonstrar por prova de identidade, elegibilidade e prevenção de duplicidade; biometria e 2FA, isoladamente, não comprovam essa garantia. Provedor real e protocolo de voto privado permanecem pendentes.
+O login identifica a conta por e-mail; cadastro exige e-mail, senha, nome e endereço, sem CPF ou outro documento nacional. Login exige senha, autenticação biométrica facial e TOTP. O produto prevê privacidade configurável e regras definidas por plebiscito inicial (setup). **Uma pessoa = uma conta e um voto por eleição** é requisito a demonstrar por identidade, elegibilidade e prevenção de duplicidade; e-mail, biometria e 2FA, isoladamente, não comprovam essa garantia. O motor facial Python do auth-face foi escolhido para integração provisória, ainda sem validação. Protocolo de voto privado permanece pendente.
 
 ### 1.1 Pilares do Sistema
 
 | Pilar | Descrição |
 |-------|-----------|
 | **1 pessoa = 1 voto** | Prova de identidade e unicidade de participação verificadas, inclusive entre modos público/privado |
-| **Soberania do setup** | Regras definidas por votação direta; alcance por país ou jurisdição pendente na seção 13 |
+| **Soberania do setup** | Regras definidas por votação direta; proposta de setup por jurisdição com herança nacional, para revisão na seção 13 |
 | **Privacidade por padrão** | Voto secreto como padrão, com opt-in público |
 | **Transparência** | Resultados, estatísticas e evidências públicas sem divulgar dados pessoais ou comprometer votos privados |
 | **Código auditável** | Plataforma open-source ou com auditoria independente obrigatória |
@@ -50,7 +50,7 @@ O produto prevê autenticação biométrica facial com segundo fator TOTP, priva
 | Servidor | Axum integrado ao Leptos + Tokio | Server functions como interface inicial; regras e autorização no servidor |
 | Banco de Dados | TursoDB local pela crate `turso` | Um processo proprietário do banco persistente |
 | Países | Implantação independente | Subdomínio, VPS, banco e configuração por país; início com um país |
-| Identidade | Provider a definir + segundo fator TOTP | Mock só para desenvolvimento/testes, rejeitado em produção |
+| Identidade | Motor facial Python do auth-face + segundo fator TOTP previsto | Serviço privado na mesma VPS; Rust mantém contas/sessões; integração, liveness e TOTP ainda não validados |
 | Permissões | RBAC + políticas por recurso/jurisdição | Nenhuma autorização definitiva no navegador |
 | Verificação | Rust, banco real, navegador e carga em release | Estratégia detalhada no plano SDD |
 | Segurança eleitoral | Protocolo a selecionar e validar | Não há implementação de sigilo, prova ou custódia de chaves |
@@ -70,7 +70,7 @@ A decisão Rust inclui HTML/CSS e JavaScript gerado para carregar o WASM.
 
 ### 2.1 Países e hierarquia territorial
 
-O país inicial é o Brasil. A mesma aplicação deve atender outros países por configuração própria de implantação, documentos de identidade, idioma e organização territorial, sem regras brasileiras fixadas no código de domínio. A elegibilidade e as regras eleitorais de cada país exigem especificação e validação próprias.
+O país inicial é o Brasil. A mesma aplicação deve atender outros países por configuração própria de implantação, idioma e organização territorial, sem regras brasileiras fixadas no código de domínio. O cadastro usa e-mail sem documento nacional. A elegibilidade e as regras eleitorais de cada país exigem especificação e validação próprias.
 
 Cada país tem sua própria instância e configuração, sem banco global exigido pelo runtime inicial. No Brasil, o modelo prevê níveis nacional, estadual e municipal; a hierarquia de outros países depende da configuração e especificação da implantação.
 
@@ -91,15 +91,15 @@ O uso é exclusivamente online. Votação, coleta de assinaturas e atendimento e
 |-------|-----------|
 | **Isolamento por País** | Dados, votos e propostas de um país nunca são misturados com outro |
 | **Isolamento por Nível** | Propostas municipais não interferem em estaduais ou nacionais |
-| **Cidadão por Jurisdição** | Vínculo territorial pretendido; residência e participação nos níveis municipal, estadual e nacional ainda a definir |
-| **Setup** | Regras por plebiscito; relação entre configuração do país e das jurisdições ainda a definir |
+| **Cidadão por Jurisdição** | Endereço inicial define cidade, estado e país de participação; alteração de endereço bloqueada nesta versão. Validação e demais critérios de elegibilidade ainda pendentes |
+| **Setup** | Regras por plebiscito; proposta de herança nacional e adoção por jurisdição, para revisão no SDD |
 | **Imutabilidade de Votos** | Votos emitidos não podem ser alterados, apenas auditados |
 
-O alcance do isolamento dentro do país, incluindo leitura pública e elegibilidade entre níveis, está pendente na [seção 13](#13-decisões-de-produto-pendentes). A hierarquia não resolve essas regras por si só.
+O alcance do isolamento e participação territorial tem uma proposta para revisão na [seção 13](#13-decisões-de-produto-pendentes): leitura pública entre territórios e participação ligada ao endereço inicial. A hierarquia não resolve essas regras por si só.
 
 ### 2.3 Parâmetros Padrão Sugeridos
 
-Estes valores são propostas de configuração, não regras de produção já aprovadas. A expressão “60% + 1”, arredondamentos, eleitorado de referência e casos de fronteira precisam de definição explícita antes dos testes eleitorais.
+Estes valores são propostas de configuração, não regras de produção já aprovadas. Fórmulas, arredondamento, snapshot e casos de fronteira têm uma [proposta do agente para revisão](../development/sdd-plan.md#regras-eleitorais-e-de-propostas-para-revisão).
 
 | Parâmetro | Valor Padrão |
 |-----------|-------------|
@@ -109,9 +109,9 @@ Estes valores são propostas de configuração, não regras de produção já ap
 | Quórum mínimo — leis normais | 25% dos eleitores aptos |
 | Quórum mínimo — leis urgentes | 20% dos eleitores aptos |
 | Quórum — configuração inicial | 40% dos eleitores aptos |
-| Maioria — configuração inicial | 60% + 1 dos votos válidos |
+| Maioria — configuração inicial | Mais de 60% dos votos válidos; floor(0,60 × válidos)+1 — proposta para revisão |
 | Quórum — alteração de setup | 35% dos eleitores aptos |
-| Maioria — alteração de setup | 60% + 1 dos votos válidos |
+| Maioria — alteração de setup | Mais de 60% dos votos válidos; floor(0,60 × válidos)+1 — proposta para revisão |
 | Prazo coleta assinaturas — normal | 90 dias |
 | Prazo debate — normal | 15 dias |
 | Prazo votação — normal | 30 dias |
@@ -122,18 +122,32 @@ Estes valores são propostas de configuração, não regras de produção já ap
 
 ---
 
+### 2.4 Feature flags por instância
+
+Um único código atende todas as implantações. Funcionalidades podem ser ativadas/desativadas por feature flags armazenadas no banco da instância. As flags são carregadas na inicialização; mudanças no banco só entram em vigor após reiniciar a aplicação. O servidor aplica o estado efetivo aos casos de uso e informa a disponibilidade à interface, mantendo autorização e regras de domínio. Flags não substituem regras aprovadas por plebiscito. Ver [contrato do servidor](../architecture/backend-architecture.md#feature-flags-por-instância).
+
+---
+
+### 2.5 Endereço por CEP
+
+No Brasil, o cadastro consulta BrasilAPI ao preencher CEP e completa estado, cidade, bairro e logradouro. O provedor é habilitado/selecionado por feature flag no banco da instância, permitindo outro adaptador em outros países. O servidor valida o resultado antes de persistir, mantendo os nomes do retorno conforme o [modelo de endereço](../architecture/database-structure.md#endereço-e-brasilapi).
+
+País vem da configuração da VPS. O endereço usa apenas os campos retornados pelo BrasilAPI, sem número ou complemento nesta versão. Consulta postal não comprova residência. Depois do primeiro cadastro, endereço e vínculo territorial permanecem bloqueados para alteração.
+
+---
+
 ## 3. Módulo: Autenticação Biométrica
 
-O requisito de produto é reconhecimento facial e segundo fator TOTP. As decisões sobre identidade e sessão estão na [seção 13](#13-decisões-de-produto-pendentes); fluxos e critérios técnicos em [identidade e autorização](../architecture/auth-rbac-flow.md).
+O requisito de produto é reconhecimento facial e segundo fator TOTP. O aproveitamento do motor Python do auth-face foi aprovado, sem integração executada. As demais decisões sobre identidade e sessão estão na [seção 13](#13-decisões-de-produto-pendentes); fluxos e critérios técnicos em [identidade e autorização](../architecture/auth-rbac-flow.md).
 
 ### 3.1 Fluxo de Autenticação a especificar
 
-1. Identificar a conta e validar credenciais conforme contrato ainda a decidir.
+1. Identificar a conta pelo e-mail e validar a senha no servidor.
 2. Verificar a identidade pelo provider real, com liveness e falhas definidos.
 3. Validar segundo fator TOTP conforme política de segurança e recuperação.
 4. Estabelecer sessão e obter contexto de autorização no servidor.
 
-Senha versus fluxo sem senha, formato de sessão e eventual uso de JWT não estão decididos. Cadastro sintético valida fluxos de desenvolvimento, sem demonstrar biometria ou unicidade real.
+Login por e-mail + senha, rosto e TOTP está definido. Nesta versão, a ativação não exige confirmação do e-mail; o e-mail informado não deve ser apresentado como verificado. Não oferecer “manter conectado” ou persistência de login entre usos. Sessão expira após 15 minutos sem atividade. Sessão no TursoDB da instância com cookie seguro está definida; reinício preserva última atividade/expiração/revogação e não concede um novo prazo. Definição/renovação de atividade, limite absoluto, armazenamento seguro de senha, política/troca de senha e detalhes de segurança da recuperação ainda precisam de especificação. Recuperação de senha usa rosto + TOTP, sem envio de e-mail. Perda do TOTP usa códigos de recuperação de uso único fornecidos no cadastro, mantendo senha e rosto; detalhes de geração e consumo estão no guia de identidade. Cadastro sintético valida fluxos de desenvolvimento, sem demonstrar biometria ou unicidade real.
 
 ### 3.2 Reautenticação para Ações Críticas
 
@@ -144,7 +158,7 @@ As seguintes ações exigem revalidação biométrica completa (face + 2FA):
 - Criação de proposta
 - Alteração de dados de perfil sensíveis e privacidade
 
-Participação em alteração de setup também exige a reautenticação prevista no [guia de identidade](../architecture/auth-rbac-flow.md#reautenticação-e-autorização-no-servidor). Especificar validade, escopo da ação/recurso e prevenção de replay antes de implementar esses fluxos.
+Participação em alteração de setup também exige a reautenticação prevista no [guia de identidade](../architecture/auth-rbac-flow.md#reautenticação-e-autorização-no-servidor). A proposta do SDD vincula reautenticação à sessão/ação/recurso por cinco minutos, com consumo único; exige validação antes de implementar estes fluxos.
 
 ### 3.3 Segurança Biométrica
 
@@ -153,11 +167,13 @@ Participação em alteração de setup também exige a reautenticação prevista
 | Armazenamento | Não persistir imagem bruta; template/referência protegida depende do provider |
 | Transmissão | Meta de TLS 1.3; configuração e evidência ainda ausentes |
 | Repouso | Meta de AES-256 para dados sensíveis, com gestão de chaves a especificar; sua menção não demonstra criptografia implementada |
-| Unicidade | Definir prova documental e prevenção de duplicidade/residência; igualdade de hash biométrico não especifica matching |
+| Unicidade | Sem documento nacional; prevenção de duplicidade/elegibilidade ainda a definir. Unicidade de e-mail ou igualdade de hash biométrico não comprova uma conta por pessoa |
 
 ### 3.4 Perfil e privacidade
 
-Perfil público pode exibir nome real ou pseudônimo verificado, foto, bio, histórico de propostas e votos emitidos como públicos. Perfil privado não divulga documento ou dados pessoais aos demais usuários; sua apresentação deve seguir a preferência configurada.
+Perfil público pode exibir nome real ou pseudônimo verificado, foto, bio, histórico de propostas e votos emitidos como públicos. Perfil privado não divulga e-mail ou dados pessoais aos demais usuários; sua apresentação deve seguir a preferência configurada.
+
+Endereço residencial não é dado público, independentemente da visibilidade do perfil. Após gravação inicial do cadastro, não pode ser alterado nesta versão; exibir ao titular somente para leitura.
 
 O cidadão pode alterar a preferência do perfil; votos já emitidos mantêm a visibilidade escolhida na emissão. Definir quais históricos podem ser publicados sem permitir correlação com voto privado. Estatísticas por região e demografia, quando autorizadas, precisam de regras de agregação/divulgação antes de implementar.
 
@@ -192,7 +208,7 @@ O cidadão pode alterar a preferência do perfil; votos já emitidos mantêm a v
 | **Expirada** | Prazo de assinaturas esgotado sem atingir meta |
 | **Arquivada** | Removida de circulação ativa |
 
-Empate, arquivamento, edição após publicação, retirada de assinatura e efeito de emendas precisam de transições explícitas. As assinaturas devem referenciar o texto apoiado conforme regra a definir.
+As [regras propostas para revisão](../development/sdd-plan.md#regras-eleitorais-e-de-propostas-para-revisão) definem empate, arquivamento, texto publicado imutável e retirada/reassinatura na coleta. Assinaturas referenciam a versão apoiada; emendas são sugestões, sem mudar texto já apoiado.
 
 ### 5.2 Limites por Cidadão por Ano
 
@@ -200,13 +216,13 @@ Empate, arquivamento, edição após publicação, retirada de assinatura e efei
 - Propostas urgentes: **1 por ano**
 - Limite bloqueante — sistema deve impedir a ação que consumir a quota após atingir o limite
 
-Os valores vêm da configuração sugerida. Definir ano civil/fuso, momento de consumo (rascunho ou publicação), cancelamentos e concorrência. Leis não podem ser criadas antes da adoção do setup; plebiscito inicial tem seu próprio bootstrap ainda a especificar.
+Os valores vêm da configuração sugerida. Proposta para revisão: quota por ano civil no fuso da instância, consumida atomicamente na publicação; rascunho não consome e cancelamento não devolve. Leis não podem ser criadas antes da adoção do setup; plebiscito inicial tem seu próprio bootstrap ainda a especificar.
 
 ### 5.3 Fluxos sugeridos por tipo
 
 Lei normal: coleta de assinaturas → debate → votação. Lei urgente: coleta → votação, conforme os prazos sugeridos da seção 2.3. Meta-lei usa votação especial de setup, sem se confundir com lei comum.
 
-Especificar transições e retomada após restart, incluindo expiração da coleta e disputa entre envio/encerramento. Bootstrap do plebiscito inicial e requisitos de uma meta-lei ainda precisam de regras completas; este fluxo não resolve essas pendências.
+Especificar transições e retomada após restart, incluindo expiração da coleta e disputa entre envio/encerramento. Bootstrap do plebiscito inicial e meta-leis seguem as propostas do SDD, ainda para revisão, com vigência apenas em eleições futuras.
 
 ---
 
@@ -234,7 +250,7 @@ O requisito é impedir voto duplicado também ao alternar os modos público e pr
 | **Maioria** | % de votos válidos (SIM vs NÃO, excluindo abstenções) |
 | **Resultado** | Aprovada (quórum + maioria) \| Rejeitada \| Quórum não atingido |
 
-Abstenções são excluídas da maioria neste requisito. Ainda é necessário definir snapshot do eleitorado, tratamento no quórum, arredondamentos, empate, zero votos válidos e fórmulas por tipo de eleição. Fixar versão do setup e vigência de alterações para não mudar regras de eleição em curso. Voto aceito é imutável no produto pretendido, mas persistência e integridade ainda exigem implementação e validação.
+Abstenções são excluídas da maioria neste requisito. Snapshot, quórum com abstenção, arredondamentos e rejeição por empate/zero votos válidos têm propostas para revisão no SDD. Fixar versão do setup e vigência de alterações para não mudar regras de eleição em curso. Voto aceito é imutável no produto pretendido, mas persistência e integridade ainda exigem implementação e validação.
 
 ---
 
@@ -256,10 +272,10 @@ Abstenções são excluídas da maioria neste requisito. Ainda é necessário de
 | Assinatura de proposta | Elegibilidade e texto apoiado, respeitando a política de divulgação |
 | Emissão de voto | Evidência definida pelo protocolo; sem associação indevida entre identidade e cédula privada |
 | Alteração de setup | Valores/versões, vigência e meta-lei aprovada |
-| Criação de conta | Estado da validação e evidência mínima, sem publicar documento ou biometria |
+| Criação de conta | Estado da validação e evidência mínima, sem publicar e-mail ou biometria |
 | Acesso de auditor | Auditor, escopo autorizado e acesso realizado |
 
-Definir modelo de ameaça, evidências públicas/restritas, retenção e verificação independente. Não registrar automaticamente identidade, IP ou vínculo de reautenticação junto ao voto privado. Hash chain e proibição de UPDATE/DELETE não comprovam por si resistência à adulteração pelo operador. Blockchain ou equivalente permanece uma proposta a avaliar, sem serviço adicional aprovado.
+As propostas de auditoria/retenção do SDD exigem modelo de ameaça e verificação independente antes de produção. Não registrar automaticamente identidade, IP ou vínculo de reautenticação junto ao voto privado. Hash chain e proibição de UPDATE/DELETE não comprovam por si resistência à adulteração pelo operador. A proposta inicial dispensa blockchain e exige checkpoints externos verificáveis; não há serviço adicional aprovado.
 
 ---
 
@@ -292,7 +308,7 @@ R18/R19 abrangem leitura pública e operações autenticadas pela interface inic
 | RNF08 | Acessibilidade | WCAG 2.1 AA — leitores de tela, alto contraste, teclado |
 | RNF09 | Internacionalização | i18n — múltiplos idiomas, datas e fusos por jurisdição |
 | RNF10 | Proteção de dados | Requisito de adequação ao país; tratamento, retenção e direitos a especificar, sem alegar conformidade demonstrada |
-| RNF11 | Backup | Meta inicial diária e retenção de 10 anos; política por categoria, RPO/RTO e restauração ainda a decidir/validar |
+| RNF11 | Backup | Proposta: completo diário e recuperação horária, 7 diários/4 semanais; RPO 1h/RTO 4h a validar. Retenção eleitoral pública minimizada por 10 anos, sem aplicar a todos os backups/dados pessoais |
 | RNF12 | Organização | Monolito modular Rust, inicialmente um pacote de aplicação |
 | RNF13 | Stack técnica | Rust, Leptos SSR/hidratação WASM, Axum/Tokio e TursoDB local |
 | RNF14 | PWA | Frontend instalável como app no celular e desktop, com uso exclusivamente online |
@@ -302,14 +318,14 @@ R18/R19 abrangem leitura pública e operações autenticadas pela interface inic
 
 ## 11. Mapa de Telas (31 Telas)
 
-Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção entre países são escopo futuro a revisar. Troca de senha/PIN depende da decisão sobre credenciais; não resolve o login por conta própria.
+Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção entre países são escopo futuro a revisar. Critérios de recuperação constam no guia de identidade e nas propostas do SDD, ainda sem implementação; PIN não é credencial aprovada.
 
 | Módulo | Tela | Rota | Acesso |
 |--------|------|------|--------|
 | Autenticação | Login / Auth Biométrica | `/login` | Público |
 | Autenticação | Cadastro de Cidadão | `/cadastro` | Público |
 | Autenticação | Validação Biométrica | `/cadastro/biometria` | Cidadão Pendente |
-| Autenticação | Troca de Senha / PIN | `/alterar-senha` | Cidadão Autenticado |
+| Autenticação | Troca de Senha | `/alterar-senha` | Cidadão Autenticado |
 | Admin | Listagem de Países | `/admin/paises` | Admin Master |
 | Admin | Cadastro / Edição de País | `/admin/paises/novo` \| `/:id` | Admin Master |
 | Admin | Gestão de Auditores | `/admin/auditores` | Admin Master |
@@ -342,7 +358,7 @@ Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção e
 
 ## 12. Critérios de Aceite
 
-Todos estão pendentes, sem testes executados. Os IDs R01–R26 são estáveis. R03/R15 preservam a administração global como expansão futura, sem torná-la requisito da instância inicial. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
+Todos estão pendentes, sem testes executados. Os IDs R01–R29 são estáveis. R03/R15 preservam a administração global como expansão futura, sem torná-la requisito da instância inicial. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
 
 | ID | Critério |
 |----|---------|
@@ -372,23 +388,29 @@ Todos estão pendentes, sem testes executados. Os IDs R01–R26 são estáveis. 
 | R24 | Suporte a múltiplos idiomas (i18n) |
 | R25 | Ambiente local/CI reproduzível compila SSR/WASM e executa os checks definidos, sem resetar dados persistentes |
 | R26 | Frontend instalável como PWA no celular e desktop, sem modo offline ou fila local de ações eleitorais |
+| R27 | Flags persistidas por instância são carregadas na inicialização; alteração no banco mantém o estado efetivo anterior até reinício, quando o novo estado controla servidor e interface; chamadas diretas de funcionalidades desativadas são rejeitadas, sem remover dados ou contornar autorização/regras do domínio |
+| R28 | Cadastro exige e-mail, senha, nome e endereço; território é derivado do endereço no servidor. Após gravação inicial, tentativas de alterar endereço ou vínculo territorial são rejeitadas e os dados originais permanecem intactos |
+| R29 | CEP brasileiro consulta BrasilAPI pelo provedor habilitado em feature flag e preenche o endereço. Persistência mantém nomes/estrutura do retorno; falhas, flags conflitantes, dados adulterados e resposta de CEP antigo não produzem cadastro com território incorreto |
 
 ---
 
 ## 13. Decisões de produto pendentes
 
-| Tema | Decisão necessária antes da feature afetada |
+O usuário delegou as escolhas restantes e revisará depois. Todas as bases abaixo são **propostas do agente, pendentes de revisão e implementação**, registradas no [plano SDD](../development/sdd-plan.md#decisões-delegadas-para-revisão). Escolhas expressas pelo usuário continuam preservadas; bloqueadores não são checks aprovados.
+
+| Tema | Base provisória para revisão |
 | --- | --- |
-| Implantação no Brasil | Domínio, locale, fusos, VPS e carga-alvo; Brasil já definido como país inicial |
-| Identidade e sessão | Provider, prova documental, idade/elegibilidade, liveness/matching e falsos resultados, alternativa acessível, credenciais, TOTP, recuperação, expiração/revogação e validade/escopo/replay da reautenticação |
-| Território e participação | Vínculo de residência e participação municipal/estadual/nacional; alcance do isolamento, da leitura pública e da elegibilidade entre jurisdições |
-| Eleições | Eleitorado/snapshot, residência, fórmulas/arredondamento, abstenção, empate e zero votos válidos |
-| Setup | Regras por país ou por jurisdição e relação entre níveis; quem inicia, regras do primeiro plebiscito, falha de quórum, autoridade operacional para cadastro de jurisdições/atribuição de papéis e vigência de meta-leis |
-| Propostas/debate | Ano/fuso e consumo de quota, cancelamento, arquivamento, retirada/reassinatura, edição/emenda após apoio, conteúdo duplicado, reações a comentários, moderação e denúncia sem censura prévia arbitrária |
-| Sigilo e auditoria | Protocolo, ameaça, chaves, unicidade entre modos, provas/recibos e correlação de logs |
-| Operação e dados | Retenção por categoria, RPO/RTO, proteção de backup, atualização e restauração durante votação |
-| Interface e expansão | PWA/atualização/cache técnico, notificações push, API externa, administração global e credenciamento de auditores; uso offline e participação física fora do escopo |
+| Implantação no Brasil | pt-BR, America/Sao_Paulo, instantes UTC; referência de 4 vCPU/16 GiB e 50 usuários sintéticos. Domínio/VPS/destinos de backup reais são configuração a fornecer, não recursos existentes |
+| Identidade e sessão | Argon2id, 12–128 caracteres, revogar todas as sessões após troca/reset; cookie host-only SameSite=Lax + CSRF, 15 min inativo/8h absoluto. Dez códigos TOTP de uso único; sem bypass para perda simultânea de fatores. Métodos de prova de pessoa e vivacidade real são bloqueadores de validação |
+| Território e participação | CEP genérico permitido com cidade/UF válidas; catálogo local versionado por IBGE ou correspondência exata cidade/UF. Município/estado/país do endereço inicial, leitura pública entre territórios. Residência/cidadania não comprovadas; demonstração sintética até validação real |
+| Eleições | Snapshot imutável por fase; quórum inclui abstenção; ceil para mínimos; SIM>NÃO em normal/urgente e >60% em setup/meta-lei. Empate/zero votos válidos rejeita; eleitorado vazio não abre. Todas são propostas para revisão, não regras de produção aprovadas |
+| Setup | Por jurisdição com herança nacional; Admin País só inicia o plebiscito, não adota regras unilateralmente; falha mantém leis bloqueadas. Meta-lei muda apenas eleições futuras, conforme versão publicada |
+| Propostas/debate | Quota na publicação; texto imutável; retirada/reassinatura só na coleta; emendas como sugestões; duplicidade gera aviso. Moderação com motivo/histórico, sem reações ou votação de emendas inicialmente |
+| Sigilo e auditoria | Sem criptografia própria/blockchain; Helios apenas referência de avaliação, sem adoção para produção. Voto privado e uso eleitoral real bloqueados até protocolo/identidade/operação validados. Eventos minimizados, checkpoints externos; hashes locais não bastam |
+| Operação e dados | RPO 1h/RTO 4h, backups cifrados separados, chaves restritas fora do Git/banco; logs 30 dias; dados de conta enquanto ativa, política de remoção antes de produção. Retenção eleitoral não estendida indiscriminadamente a biometria/IP |
+| Interface e expansão | pt-BR primeiro, CSS simples, i18n preparada; PWA online com cache só de assets públicos. Sem push, portal/API externa, administração global ou inglês/espanhol na primeira entrega; metas futuras preservadas |
+| Feature flags | Painel local do Admin País altera flags conhecidas/auditadas, com aviso de reinício pendente; operador reinicia fora do painel. Ausentes desabilitam features opcionais; auth não pode ser desligada. Integração privada desabilitada até validação |
 
-Essas decisões não bloqueiam a fundação técnica sintética, mas impedem prometer os respectivos critérios de produção. Perguntar uma decisão por vez, com opções, e registrar a resposta antes de avançar; não resolver por suposição. A ordem de trabalho está no [plano SDD](../development/sdd-plan.md); requisitos e tarefas da primeira fatia estão no [guia de fundação](../architecture/foundation-setup.md).
+As bases provisórias permitem preparar a especificação sem novas perguntas nesta entrega. A fundação sintética continua possível; dados/provedores/protocolo real, recuperação operacional e revisão de privacidade continuam bloqueadores de produção descritos no SDD. Não alegar execução, conformidade ou garantia eleitoral por decisão documental. A ordem de trabalho está no [plano SDD](../development/sdd-plan.md); requisitos e tarefas da primeira fatia estão no [guia de fundação](../architecture/foundation-setup.md).
 
-*Democracy Without Candidates — PRD v1.2.1 — 2026-10-12*
+*Democracy Without Candidates — PRD v1.3.0 — 2026-10-12*

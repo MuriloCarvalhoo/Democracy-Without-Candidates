@@ -4,6 +4,13 @@
 
 - Application logic is Rust: Leptos SSR + WASM hydration, integrated Axum, Tokio and TursoDB via the Rust `turso` crate.
 - One independent deployment, subdomain and VPS per country; initially Brazil, with country-specific configuration for reuse elsewhere. One application process owns the local persistent database.
+- A Python facial-processing service on the same VPS is the approved exception to Rust. Reuse only the auth-face facial engine; Rust owns accounts, sessions, authorization and TursoDB. Keep this service private/loopback and validate it before use.
+- Registration requires email, password, name and address. The initially registered address determines city/state/country participation and cannot be changed in the current version, including through direct endpoint calls.
+- Brazil uses BrasilAPI CEP lookup for address autofill. Select/enable the address provider through per-instance database feature flags; retain BrasilAPI response field names in persistence. Country comes from deployment configuration, not the CEP response. Feature flags are loaded at startup; database changes take effect only after application restart. The current address scope uses only returned fields; do not collect house number or complement.
+- Login uses email + password, face and TOTP, without email confirmation or remember-me. Sessions use TursoDB and a host-only HttpOnly/Secure session cookie, expire after 15 minutes idle and retain expiry/revocation across app restart.
+- TOTP recovery uses single-use hashed codes while retaining password/face; password recovery uses face + TOTP without email delivery. Detailed approved flows and agent proposals are in docs/architecture/auth-rbac-flow.md and docs/development/sdd-plan.md.
+- The remaining defaults were delegated by the user for later review: follow the explicitly provisional SDD/PRD baseline, but keep real identity/private voting blocked until evidence. No implementation is authorized by this documentation work.
+- Email identifies the login account; do not require CPF or another national identity document. Email/face matching alone do not establish one-person uniqueness.
 - Online-only product scope. No offline participation, physical voting or physical signature collection. PWA installation does not imply offline operation.
 - Start with one application package, organized into domain, application, infrastructure and feature modules. Add crates or services only for a demonstrated need.
 - Keep business rules and authorization in server-side application/domain code. Leptos server functions are network endpoints, not trusted calls.
@@ -12,7 +19,7 @@
 ## Communication and documentation
 
 - Always use the installed `i-have-adhd` skill for user-facing responses unless the user disables it.
-- Keep responses short and concise. Ask one pending question at a time, with explicit options; do not settle open product questions by assumption.
+- Keep responses short and concise. Ask one pending question at a time with options by default. When the user delegates remaining decisions, record agent proposals for later review in the existing SDD/PRD; do not label them individually approved or implemented.
 - Keep documentation and code concise and simple. README presents the project, usage, documentation, contribution and license; session history belongs in ai-memory and technical detail in the relevant docs. Do not duplicate them in README.
 - Update existing documents. Do not create standalone analysis/review reports or duplicate decision records. Keep foundation requirements and tasks in `docs/architecture/foundation-setup.md` and architecture decisions in `docs/development/sdd-plan.md`.
 
@@ -21,7 +28,7 @@
 - Read `docs/development/sdd-plan.md` for the approved workflow, decision record and validation strategy. Product questions explicitly listed as open are not settled requirements.
 - Current user scope is documentation only. Do not create application code, install further tools or execute the implementation plan until the user requests implementation.
 - Describe each feature with observable requirements, failure cases and acceptance criteria before implementing it. Link important criteria to tests and validation evidence.
-- Resolve material contradictions explicitly. Do not invent electoral rules or claim biometric uniqueness, ballot secrecy or cryptographic guarantees that have not been implemented and verified.
+- Resolve material contradictions explicitly. Delegated electoral defaults must be labelled agent proposals for review, not approved production rules. Never claim biometric uniqueness, ballot secrecy or cryptographic guarantees without implementation and validation.
 - Keep the specification and task checklist consistent with the actual result. Record blockers and validation limits; never mark an unexecuted check as passed.
 - Work in small runnable slices. Routine implementation within an approved scope does not require repeated permission.
 

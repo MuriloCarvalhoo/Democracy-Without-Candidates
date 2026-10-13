@@ -9,7 +9,7 @@ O checkout contém README, LICENSE, AGENTS.md e documentos de produto, arquitetu
 | Documento existente | Responsabilidade |
 | --- | --- |
 | [README](../../README.md) | Entrada, estado real e navegação |
-| [PRD](../prd/prd.md) | Produto, critérios R01–R26, requisitos não funcionais e decisões pendentes |
+| [PRD](../prd/prd.md) | Produto, critérios R01–R29, requisitos não funcionais e decisões pendentes |
 | [Plano SDD](../development/sdd-plan.md) | Decisões de arquitetura, fluxo e estratégia de validação |
 | [Fundação](foundation-setup.md) | Requisitos, contratos de comandos, tarefas e evidência da primeira entrega |
 | [Servidor](backend-architecture.md) | Processo, camadas e casos de uso |
@@ -46,7 +46,7 @@ tools/load/               # pacote Goose isolado do build WASM
 artifacts/                # evidências geradas e ignoradas pelo Git
 ```
 
-Arquivos exatos de inicialização serão ajustados ao scaffold validado. Um pacote de carga separado não implica múltiplos serviços de produção.
+Arquivos exatos de inicialização serão ajustados ao scaffold validado. O motor facial Python é um serviço interno na mesma VPS; o processo Rust continua sendo o único proprietário do banco da aplicação. Um pacote de carga separado não implica múltiplos serviços de produção.
 
 ## Dependências e fronteiras
 
@@ -54,7 +54,7 @@ Arquivos exatos de inicialização serão ajustados ao scaffold validado. Um pac
 - Aplicação: recebe o contexto autenticado do servidor, autoriza ações e coordena persistência. É a fonte das regras mesmo quando invocada diretamente em testes.
 - Infraestrutura: implementa persistência, configuração e integração com identidade. Banco, segredos e bibliotecas de servidor não entram no build WASM.
 - Features: componentes Leptos, estado da tela e endpoints que delegam aos casos de uso. A UI não valida definitivamente permissões ou resultados eleitorais.
-- Transporte compartilhado: tipos públicos mínimos; evitar serializar entidades internas com documentos, biometria, segredos ou dados de voto privado.
+- Transporte compartilhado: tipos públicos mínimos; evitar serializar entidades internas com dados pessoais, biometria, segredos ou dados de voto privado.
 
 Separar capacidades de SSR e hidratação no build. Regras do servidor não podem depender de dados que o navegador possa substituir, como role, país ou alegação de reautenticação.
 
@@ -62,7 +62,7 @@ Separar capacidades de SSR e hidratação no build. Regras do servidor não pode
 
 Cada país tem implantação, subdomínio, configuração e banco próprios, com um processo de aplicação. A instância não escolhe banco por país informado pelo navegador e não exige um catálogo global para funcionar.
 
-A primeira implantação será no Brasil. Manter documentos de identidade, idioma e nomes dos níveis territoriais adaptáveis à configuração do país; critérios de elegibilidade e regras eleitorais precisam de especificação própria, sem presumir que as regras de um país servem para todos.
+A primeira implantação será no Brasil. O login usa e-mail sem documento nacional. Manter idioma e nomes dos níveis territoriais adaptáveis à configuração do país; critérios de elegibilidade e regras eleitorais precisam de especificação própria, sem presumir que as regras de um país servem para todos.
 
 No Brasil, o modelo prevê jurisdições nacional, estadual e municipal; outros países usam a hierarquia configurada para sua implantação. A elegibilidade e o escopo de acesso precisam considerar essa hierarquia; independência entre países não substitui autorização territorial dentro do país. As decisões territoriais estão no [PRD, seção 13](../prd/prd.md#13-decisões-de-produto-pendentes).
 

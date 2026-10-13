@@ -10,9 +10,15 @@ Jurisdições formam a hierarquia configurada para o país, inicialmente naciona
 
 Dados de produção, desenvolvimento e teste usam caminhos separados. Testes criam bancos descartáveis com o motor real e nunca resetam banco persistente do usuário. Somente o processo da aplicação possui o banco de produção; backup e manutenção precisam de procedimento compatível com esse modelo.
 
+## Configuração de funcionalidades
+
+Entidade conceitual `feature_flags`: chave de funcionalidade e estado habilitado/desabilitado, próprios do banco da instância. As flags são lidas na inicialização; mudanças no banco ficam pendentes de reinício da aplicação. Proposta: painel local do Admin País, com autoria/data auditadas e indicação de reinício pendente, conforme o SDD. O catálogo de chaves é definido pela aplicação; uma chave arbitrária no banco não cria funcionalidade nem permissão. Alterações devem ter autoria/data auditáveis, conforme o [contrato do servidor](backend-architecture.md#feature-flags-por-instância).
+
+Não há schema ou flags implementadas. A modelagem física e migrations serão verificadas com TursoDB real quando essa feature for executada.
+
 ## Convenções e decisões físicas pendentes
 
-Manter nomes em snake_case e identificadores lógicos UUID para entidades principais. Representação SQL de UUID, datas, enumerações, percentuais e constraints deve ser definida e validada no motor real durante migrations; não pressupor tipos/funções do banco anterior.
+Manter nomes em snake_case e identificadores lógicos UUID para entidades principais. Representação proposta no SDD: UUID/datas UTC em TEXT, booleanos INTEGER, enums com CHECK e percentuais em pontos-base. Verificar com o motor real durante migrations; não pressupor tipos/funções de outro banco.
 
 Persistir marcos de tempo de forma consistente e apresentar datas conforme locale/fuso do país. Percentuais e arredondamentos exigem regras exatas antes da implementação eleitoral. Campos de atualização e exclusão devem corresponder ao ciclo de vida da entidade, sem aplicar soft delete indiscriminadamente a todos os registros.
 
@@ -22,18 +28,38 @@ Os campos abaixo descrevem necessidades, não um schema final nem dados que deva
 
 | Entidade conceitual | Dados e vínculos necessários |
 | --- | --- |
-| Identidade/cidadão | ID, dados de cadastro mínimos, status, jurisdição/residência e referência protegida ao provider |
+| Identidade/cidadão | ID, e-mail, nome e endereço obrigatórios, referências à cidade/estado/país derivadas do endereço, status e referência protegida ao provider; sem documento nacional |
 | Perfil | user_id, nome de exibição, foto/bio autorizadas e visibilidade pública/privada |
 | Preferências | Visibilidade padrão do voto, idioma e notificações |
-| Sessão/credenciais | Estado necessário a expiração, revogação e recuperação segundo contrato de autenticação ainda aberto |
-| Segundo fator | Estado de configuração e segredo/referência protegidos; recuperação ainda a especificar |
+| Sessão/credenciais | Hash de senha com salt, sem senha em texto puro; estado de sessão persistido no TursoDB da instância, associado ao identificador opaco do cookie, com última atividade, expiração e revogação preservadas após reinício; schema/migrations ainda a detalhar, sem manter conectado entre usos |
+| Segundo fator | Estado de configuração e segredo/referência protegidos; hashes de códigos de recuperação TOTP e estado de consumo de uso único, com atualização atômica |
 | Jurisdição | ID, nome, tipo nacional/estadual/municipal, parent_id e status |
 | Roles/permissões | Papéis e permissões, vínculos de usuário/role e role/permissão conforme políticas |
 | Reautenticação | Ação/recurso autorizado, provider, resultado, validade e consumo; associação com cédula privada depende do protocolo |
 
-Separar dados pessoais de projeções públicas. Não armazenar imagem biométrica bruta. A proposta de `biometric_hash UNIQUE` não é uma solução especificada para matching ou unicidade de pessoas. Unicidade documental/e-mail e residência entre jurisdições precisam de escopo definido, sem permitir cadastro duplicado apenas por mudança territorial.
+Separar dados pessoais de projeções públicas. Não armazenar imagem biométrica bruta. A proposta de `biometric_hash UNIQUE` não é uma solução especificada para matching ou unicidade de pessoas. E-mail identifica a conta na instância, sem documento nacional. O endereço inicial e seu vínculo territorial não podem ser alterados nesta versão. Persistência e casos de uso devem preservar esse bloqueio; normalização/formato de e-mail e validação do endereço precisam de critérios definidos; e-mail informado não é verificado e sua confirmação não bloqueia ativação nesta versão; unicidade de e-mail não garante unicidade de pessoas.
 
 Entidades de administração global não integram a fundação; dependem das [decisões de expansão do PRD](../prd/prd.md#13-decisões-de-produto-pendentes).
+
+## Endereço e BrasilAPI
+
+O Brasil usa BrasilAPI para preencher o endereço a partir do CEP. Como escolha técnica inicial, usar `GET https://brasilapi.com.br/api/cep/v1/{cep}`, suficiente para endereço sem geolocalização. Preservar os nomes do retorno no modelo persistido:
+
+| Campo | Conteúdo |
+| --- | --- |
+| `cep` | Código postal como texto, preservando zeros à esquerda |
+| `state` | Sigla do estado |
+| `city` | Nome do município |
+| `neighborhood` | Bairro; pode vir vazio em CEPs genéricos |
+| `street` | Logradouro; pode vir vazio em CEPs genéricos |
+| `service` | Fonte usada internamente pelo BrasilAPI, como `open-cep`; não sobrescrever com o nome do adaptador da aplicação |
+| `ibge` | Objeto com `city` e `state`: códigos IBGE como texto ou null, mantendo chaves aninhadas |
+
+O objeto `ibge` será preservado serializado, com representação SQL validada na migration; não há schema executável. Referências internas de cidadão/jurisdição permanecem separadas desses campos. O país vem da configuração da VPS: BrasilAPI não retorna país, número ou complemento. Não adicionar campos de número ou complemento nesta versão; o endereço usa somente os campos do retorno.
+
+Outros provedores serão adaptadores selecionados pelas flags, mapeando seus retornos para o mesmo modelo onde aplicável, sem impor CEP de oito dígitos ou códigos IBGE a outros países. BrasilAPI desligado não altera endereços já cadastrados nem autoriza editá-los.
+
+Fonte: [implementação oficial do retorno CEP](https://github.com/BrasilAPI/BrasilAPI/blob/0104c49c94017e47560615c8713ba7686ae2e381/services/cep/cep.js). Em 2026-10-12, uma consulta pública ao CEP `89010025` confirmou esses sete campos, incluindo `ibge`. Isso verifica o serviço externo em uma amostra, não a integração da aplicação.
 
 ## Setup, propostas e participação
 
@@ -52,7 +78,7 @@ Tipos de proposta: `normal_law`, `urgent_law`, `setup_change`, `initial_setup`. 
 
 Notificações previstas incluem criação de proposta, abertura de votação, lembrete de prazo e aprovação/rejeição. Entrega de e-mail requer política de retry e deduplicação especificada antes de prometer esse fluxo.
 
-Setup e histórico devem existir antes das leis. Cada eleição precisa de regras/eleitorado estáveis, com aplicação de mudança de setup definida. A forma de guardar snapshots, transições e versão apoiada será decidida por feature; o modelo não resolve retirada de assinatura, edição após publicação ou empate.
+Setup e histórico devem existir antes das leis. Cada eleição precisa de regras/eleitorado estáveis, com aplicação de mudança de setup definida. Snapshots materializados por fase, texto imutável após publicação, retirada de assinatura só na coleta e empate rejeitado são propostas no SDD, não implementações. Schema/transações exigem testes reais.
 
 ## Votos, recibos e resultados: bloqueados pelo protocolo
 
@@ -88,15 +114,15 @@ O produto exige preservação auditável de votos aceitos e eventos críticos. C
 
 Cadeia de hashes é uma técnica candidata à verificação de integridade, não uma demonstração de imutabilidade perante um operador privilegiado. Modelo de ameaça, verificação externa, custódia de chaves e política de retenção ainda precisam ser definidos. A menção de blockchain no PRD não escolhe uma implementação.
 
-Dados sensíveis incluem documentos, biometria, credenciais/segredos TOTP, sessão, IP, user-agent e histórico privado. Definir proteção em repouso, gestão/rotação/recuperação de chaves, permissões de arquivo, exportação e backup. Não presumir que declarar AES-256 significa que o banco já os protege.
+Dados sensíveis incluem e-mail, nome, endereço, biometria, credenciais/segredos TOTP, sessão, IP, user-agent e histórico privado. Definir proteção em repouso, gestão/rotação/recuperação de chaves, permissões de arquivo, exportação e backup. Não presumir que declarar AES-256 significa que o banco já os protege.
 
 ## Migrations, fixtures e operação
 
-Toda mudança estrutural usa migration versionada, separada de fixtures. Fixtures sintéticas podem incluir Brasil/jurisdição, permissões e setup de teste, sem adotar regras de produção por seed. Identificadores de documento devem considerar a configuração do país, sem exigir CPF em todas as implantações. Não criar admin/credencial fixa de produção por seed.
+Toda mudança estrutural usa migration versionada, separada de fixtures. Fixtures sintéticas podem incluir Brasil/jurisdição, e-mails de teste, permissões e setup de teste, sem adotar regras de produção por seed. Não criar admin/credencial fixa de produção por seed.
 
 Versionar/aplicar migrations de forma reproduzível, tratando execução repetida, falha parcial e compatibilidade com dados existentes. Não alterar schema manualmente nem destruir dados para fazer um teste passar.
 
-Backup diário e retenção de dez anos são metas propostas do PRD, com política por categoria e objetivos de perda/tempo de recuperação ainda abertos. Validar um procedimento consistente com o motor real e provar restauração em caminho isolado; copiar um arquivo sem validação não é evidência de recuperação.
+As [bases provisórias do SDD](../development/sdd-plan.md#decisões-delegadas-para-revisão) separam recuperação horária/backup completo diário (RPO 1h/RTO 4h), logs de 30 dias e histórico eleitoral público minimizado de dez anos; não aplicar a mesma retenção a todos os dados. Validar um procedimento consistente com o motor real e provar restauração em caminho isolado; copiar um arquivo sem validação não é evidência de recuperação.
 
 ## Ordem e evidência
 

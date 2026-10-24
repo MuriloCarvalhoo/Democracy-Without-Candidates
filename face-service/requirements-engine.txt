@@ -1,0 +1,6 @@
+# Real engine inherited from auth-face (DeepFace/Facenet512, OpenCV detector).
+# Large download (TensorFlow); model weights are fetched by DeepFace on first use.
+-r requirements.txt
+deepface==0.0.103
+tensorflow-cpu==2.21.0
+tf-keras==2.21.0

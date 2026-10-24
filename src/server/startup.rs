@@ -12,7 +12,7 @@ use crate::infrastructure::{
     config::{Config, IdentityProviderKind},
     db::Db,
     face::FaceVerifier,
-    face_service::FaceServiceClient,
+    face_service::{FaceServiceClient, read_key_file},
     flags::Flags,
     migrations,
 };
@@ -77,9 +77,25 @@ async fn serve(
         .map_err(|e| format!("feature flags: {e}"))?;
     tracing::info!(enabled = ?flags.enabled_keys(), env = ?config.env, country = config.country.code, "configuration loaded");
 
-    let face = match (config.identity_provider, &config.face_service_url) {
-        (IdentityProviderKind::FaceService, Some(url)) => {
-            FaceVerifier::Service(FaceServiceClient::new(url))
+    let face = match (
+        config.identity_provider,
+        &config.face_service_url,
+        &config.face_service_key_file,
+    ) {
+        (IdentityProviderKind::FaceService, Some(url), Some(key_file)) => {
+            let key = read_key_file(key_file).map_err(|e| format!("face service key: {e}"))?;
+            let client = FaceServiceClient::new(url, &key)
+                .map_err(|e| format!("face service client: {e}"))?;
+            match client.health().await {
+                Ok(()) => tracing::info!(url = %client.base_url, "face service reachable"),
+                Err(e) => {
+                    tracing::warn!(url = %client.base_url, error = %e, "face service not reachable at startup")
+                }
+            }
+            tracing::warn!(
+                "face service: liveness is not validated server-side; a face match is not proof of a live person"
+            );
+            FaceVerifier::Service(client)
         }
         _ => FaceVerifier::Synthetic,
     };

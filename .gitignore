@@ -1,0 +1,13 @@
+/target
+/data
+/artifacts
+/secrets
+*.db
+*.db-wal
+*.db-shm
+*.db-log
+.env
+.env.*
+!.env.example
+/face-service/.venv
+__pycache__/

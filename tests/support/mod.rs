@@ -1,0 +1,222 @@
+//! E2E harness: isolated app process (disposable database, free loopback port),
+//! chromedriver + headless Chrome, bounded waits and cleanup of spawned processes only.
+#![allow(dead_code)]
+
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    time::{Duration, Instant},
+};
+
+use fantoccini::{Client, ClientBuilder, Locator};
+
+pub const WAIT: Duration = Duration::from_secs(20);
+
+pub fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+fn http_get_status(port: u16, path: &str) -> Option<u16> {
+    let mut stream = TcpStream::connect_timeout(
+        &format!("127.0.0.1:{port}").parse().ok()?,
+        Duration::from_millis(500),
+    )
+    .ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+    )
+    .ok()?;
+    let mut buf = [0u8; 64];
+    let n = stream.read(&mut buf).ok()?;
+    std::str::from_utf8(&buf[..n])
+        .ok()?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+fn wait_until(what: &str, timeout: Duration, mut ok: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if ok() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("timed out after {timeout:?} waiting for {what}");
+}
+
+pub struct App {
+    child: Child,
+    pub port: u16,
+    pub db_path: PathBuf,
+    env: Vec<(String, String)>,
+}
+
+impl App {
+    /// Starts the built server binary (`cargo leptos build` first) on a free port.
+    pub fn start(db_path: &Path, extra_env: &[(&str, &str)]) -> Self {
+        let env: Vec<(String, String)> = extra_env
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let port = free_port();
+        let app = Self {
+            child: spawn_app(db_path, port, &env),
+            port,
+            db_path: db_path.to_owned(),
+            env,
+        };
+        app.wait_ready();
+        app
+    }
+
+    fn wait_ready(&self) {
+        let port = self.port;
+        wait_until("app /healthz", Duration::from_secs(90), || {
+            http_get_status(port, "/healthz") == Some(200)
+        });
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        format!("http://127.0.0.1:{}{path}", self.port)
+    }
+
+    /// Stops the process (SIGKILL) and starts it again on the same database and port.
+    pub fn restart(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        self.child = spawn_app(&self.db_path, self.port, &self.env);
+        self.wait_ready();
+    }
+}
+
+fn spawn_app(db_path: &Path, port: u16, env: &[(String, String)]) -> Child {
+    let bin = std::env::var("DWC_E2E_BIN").unwrap_or_else(|_| "target/e2e/dwc".into());
+    assert!(
+        Path::new(&bin).exists(),
+        "{bin} not found: run `just e2e` (builds with cargo-leptos and copies the binary)"
+    );
+    let mut cmd = Command::new(&bin);
+    cmd.env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("RUST_LOG", "warn")
+        .env("DWC_ENV", "test")
+        .env("DWC_DB_PATH", db_path)
+        .env("DWC_COUNTRY", "BR")
+        .env("DWC_IDENTITY_PROVIDER", "synthetic")
+        .env("LEPTOS_SITE_ROOT", "target/site")
+        .env("LEPTOS_OUTPUT_NAME", "dwc")
+        .env("LEPTOS_SITE_ADDR", format!("127.0.0.1:{port}"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let child = cmd.spawn().expect("spawn app");
+    let mut child = child;
+    // Fail fast if the process exits during startup (bad config, port in use).
+    std::thread::sleep(Duration::from_millis(50));
+    if let Ok(Some(status)) = child.try_wait() {
+        panic!("app exited during startup: {status}");
+    }
+    child
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub struct Browser {
+    driver: Child,
+    pub client: Client,
+}
+
+impl Browser {
+    pub async fn start() -> Self {
+        let port = free_port();
+        let bin = std::env::var("CHROMEDRIVER").unwrap_or_else(|_| "chromedriver".into());
+        let driver = Command::new(&bin)
+            .arg(format!("--port={port}"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("chromedriver ({bin}) is required for E2E: {e}"));
+        wait_until("chromedriver", Duration::from_secs(20), || {
+            http_get_status(port, "/status") == Some(200)
+        });
+
+        let mut chrome = serde_json::json!({
+            "args": ["--headless=new", "--no-sandbox", "--disable-gpu", "--window-size=390,844", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
+        });
+        if let Ok(binary) = std::env::var("CHROME_BIN") {
+            chrome["binary"] = binary.into();
+        }
+        let mut caps = serde_json::Map::new();
+        caps.insert("goog:chromeOptions".into(), chrome);
+        let client = ClientBuilder::rustls()
+            .expect("tls")
+            .capabilities(caps)
+            .connect(&format!("http://127.0.0.1:{port}"))
+            .await
+            .expect("webdriver session");
+        Self { driver, client }
+    }
+
+    pub async fn goto_hydrated(&self, url: &str) {
+        self.client.goto(url).await.expect("goto");
+        self.client
+            .wait()
+            .at_most(WAIT)
+            .for_element(Locator::Css("main[data-hydrated='true']"))
+            .await
+            .expect("page hydrated");
+    }
+
+    pub async fn text_of(&self, css: &str) -> String {
+        self.client
+            .find(Locator::Css(css))
+            .await
+            .expect(css)
+            .text()
+            .await
+            .unwrap()
+    }
+
+    /// Polls until the element text satisfies `pred` (bounded).
+    pub async fn wait_text(&self, css: &str, pred: impl Fn(&str) -> bool) -> String {
+        let start = Instant::now();
+        loop {
+            if let Ok(el) = self.client.find(Locator::Css(css)).await
+                && let Ok(text) = el.text().await
+                && pred(&text)
+            {
+                return text;
+            }
+            assert!(
+                start.elapsed() < WAIT,
+                "timed out waiting for text in {css}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    pub async fn close(self) {
+        let _ = self.client.close().await;
+        let mut driver = self.driver;
+        let _ = driver.kill();
+        let _ = driver.wait();
+    }
+}

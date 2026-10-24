@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools
+        run: |
+          cargo install cargo-leptos --locked --version 0.3.11
+          cargo install just --locked --version 1.59.0
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          install-chromedriver: true
+      - run: just check
+      - run: just test
+      - name: E2E
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+        run: just e2e
+      - name: Load smoke
+        run: just load 5 20s
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: artifacts
+          path: artifacts/
+          if-no-files-found: ignore

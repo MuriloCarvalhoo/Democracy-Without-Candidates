@@ -1,0 +1,4 @@
+# Compile-time name used by Leptos hydration scripts. cargo-leptos sets it, but plain
+# `cargo test`/`cargo build` rebuilds of the server binary must agree with it.
+[env]
+LEPTOS_OUTPUT_NAME = "dwc"

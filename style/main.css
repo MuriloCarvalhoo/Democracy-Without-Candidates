@@ -74,3 +74,14 @@ video { width: 100%; max-width: 24rem; border-radius: .5rem; }
 .proposal-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .deadlines { padding-left: 1.25rem; }
 fieldset { border: 1px solid var(--border); border-radius: .25rem; display: grid; gap: .5rem; }
+/* Debate: user text is plain text; keep line breaks without HTML. */
+.comments { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+.comment { background: var(--card); border: 1px solid var(--border); border-radius: .5rem; padding: .75rem; }
+.comment.depth-1 { margin-left: 1rem; }
+.comment.depth-2 { margin-left: 2rem; }
+.comment-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: .5rem 0; }
+.comment-body.moderated { opacity: .7; border-left: 3px solid var(--danger); padding-left: .5rem; }
+.comment-removed { font-style: italic; color: var(--muted); }
+.comment-actions { gap: .75rem; }
+.inline-form { margin-top: .5rem; }
+.notice.locked { background: #fff3cd; color: #5c4400; }

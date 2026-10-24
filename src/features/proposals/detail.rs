@@ -143,6 +143,7 @@ fn detail_view(d: ProposalDetail, a: Actions) -> impl IntoView {
                 <p class="row">
                     <A href=format!("/propostas/{id}/assinantes")>{t("proposals.action.signers")}</A>
                     <a href=format!("/propostas/{id}/exportar") rel="external" download>{t("proposals.action.export")}</a>
+                    <A href=format!("/propostas/{id}/debate") attr:data-testid="debate-link">{t("debate.link")}</A>
                 </p>
             })}
         </article>

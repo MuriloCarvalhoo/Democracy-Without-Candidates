@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod audit;
+pub mod debate;
 pub mod identity;
 pub mod notification;
 pub mod proposals;

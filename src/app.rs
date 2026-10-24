@@ -10,6 +10,7 @@ use crate::{
         account::{ChangePasswordPage, RecoveryCodesPage},
         admin::{AdminPage, AuditorsPage},
         audit::{AuditAdvancedPage, AuditPublicPage},
+        debate::{AmendmentsPage, DebatePage, ModerationPage},
         enroll::EnrollPage,
         home::HomePage,
         login::{LoginPage, ResetPasswordPage},
@@ -75,10 +76,13 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/propostas/:id") view=ProposalPage/>
                     <Route path=path!("/propostas/:id/editar") view=EditProposalPage/>
                     <Route path=path!("/propostas/:id/assinantes") view=SignersPage/>
+                    <Route path=path!("/propostas/:id/debate") view=DebatePage/>
+                    <Route path=path!("/propostas/:id/debate/emenda") view=AmendmentsPage/>
                     <Route path=path!("/dashboard") view=DashboardPage/>
                     <Route path=path!("/setup/historico") view=SetupHistoryPage/>
                     <Route path=path!("/admin") view=AdminPage/>
                     <Route path=path!("/admin/auditores") view=AuditorsPage/>
+                    <Route path=path!("/admin/moderacao") view=ModerationPage/>
                 </Routes>
             </Layout>
         </Router>

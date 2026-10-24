@@ -6,6 +6,8 @@ pub mod http;
 pub mod startup;
 
 #[cfg(test)]
+mod debate_network_tests;
+#[cfg(test)]
 mod identity_network_tests;
 
 use std::sync::Arc;

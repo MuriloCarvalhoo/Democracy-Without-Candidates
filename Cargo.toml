@@ -161,3 +161,7 @@ required-features = ["ssr"]
 [[test]]
 name = "e2e_pwa"
 required-features = ["ssr"]
+
+[[test]]
+name = "e2e_debate"
+required-features = ["ssr"]

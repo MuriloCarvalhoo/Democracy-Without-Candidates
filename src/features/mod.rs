@@ -4,6 +4,7 @@
 pub mod account;
 pub mod admin;
 pub mod audit;
+pub mod debate;
 pub mod enroll;
 pub mod face;
 pub mod home;

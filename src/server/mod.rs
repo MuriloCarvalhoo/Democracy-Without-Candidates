@@ -1,5 +1,6 @@
 //! HTTP composition: shared state, request context helpers and middleware.
 
+pub mod backup;
 pub mod context;
 pub mod http;
 pub mod startup;

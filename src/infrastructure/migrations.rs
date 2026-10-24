@@ -47,24 +47,7 @@ pub async fn run(db: &Db) -> Result<Vec<&'static str>, MigrationError> {
     .await?;
     tx.commit().await?;
 
-    let conn = db.read().await?;
-    let applied = super::db::query_all(
-        &conn,
-        "SELECT version, checksum FROM schema_migrations ORDER BY version",
-        (),
-    )
-    .await?;
-    let mut applied_versions = Vec::new();
-    for row in applied {
-        let version: String = row.get(0)?;
-        let checksum: String = row.get(1)?;
-        match MIGRATIONS.iter().find(|m| m.version == version) {
-            Some(m) if sha256_hex(m.sql) == checksum => applied_versions.push(version),
-            Some(_) => return Err(MigrationError::Modified(version)),
-            None => return Err(MigrationError::Unknown(version)),
-        }
-    }
-
+    let applied_versions = verified_applied(&db.read().await?).await?;
     let mut newly = Vec::new();
     for m in MIGRATIONS {
         if applied_versions.iter().any(|v| v == m.version) {
@@ -81,6 +64,40 @@ pub async fn run(db: &Db) -> Result<Vec<&'static str>, MigrationError> {
         newly.push(m.version);
     }
     Ok(newly)
+}
+
+/// Applied versions, failing on edited or unknown migrations. Read-only.
+async fn verified_applied(conn: &turso::Connection) -> Result<Vec<String>, MigrationError> {
+    let applied = super::db::query_all(
+        conn,
+        "SELECT version, checksum FROM schema_migrations ORDER BY version",
+        (),
+    )
+    .await?;
+    let mut versions = Vec::new();
+    for row in applied {
+        let version: String = row.get(0)?;
+        let checksum: String = row.get(1)?;
+        match MIGRATIONS.iter().find(|m| m.version == version) {
+            Some(m) if sha256_hex(m.sql) == checksum => versions.push(version),
+            Some(_) => return Err(MigrationError::Modified(version)),
+            None => return Err(MigrationError::Unknown(version)),
+        }
+    }
+    Ok(versions)
+}
+
+/// Read-only check used on backups/restores: `(applied, pending)` for this binary.
+pub async fn status(
+    conn: &turso::Connection,
+) -> Result<(Vec<String>, Vec<&'static str>), MigrationError> {
+    let applied = verified_applied(conn).await?;
+    let pending = MIGRATIONS
+        .iter()
+        .map(|m| m.version)
+        .filter(|v| !applied.iter().any(|a| a == v))
+        .collect();
+    Ok((applied, pending))
 }
 
 #[cfg(test)]

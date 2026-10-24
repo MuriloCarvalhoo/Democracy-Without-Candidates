@@ -5,6 +5,8 @@ edition = "2024"
 rust-version = "1.96"
 license = "MIT"
 publish = false
+# Separate packages with their own workspace/lockfile (e.g. tools/load).
+exclude = ["tools/"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -18,7 +20,7 @@ serde_json = "1"
 thiserror = "2"
 console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen = { version = "=0.2.129", optional = true }
-web-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Navigator", "ServiceWorkerContainer", "Storage", "Window"] }
 
 # Server-only dependencies
 axum = { version = "0.8.9", optional = true }
@@ -78,6 +80,8 @@ site-root = "target/site"
 site-pkg-dir = "pkg"
 style-file = "style/main.css"
 assets-dir = "public"
+# Content-hashed pkg file names (requires hash.txt next to the server binary).
+hash-files = true
 site-addr = "127.0.0.1:3000"
 reload-port = 3001
 browserquery = "defaults"
@@ -90,4 +94,12 @@ lib-profile-release = "wasm-release"
 
 [[test]]
 name = "e2e"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_admin"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_pwa"
 required-features = ["ssr"]

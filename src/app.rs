@@ -1,12 +1,16 @@
 use leptos::prelude::*;
-use leptos_meta::{Link, Meta, MetaTags, Stylesheet, Title, provide_meta_context};
+use leptos_meta::{HashedStylesheet, Link, Meta, MetaTags, Title, provide_meta_context};
 use leptos_router::{
     components::{Route, Router, Routes},
     path,
 };
 
 use crate::{
-    features::{home::HomePage, shell::Layout},
+    features::{
+        admin::{AdminPage, AuditorsPage},
+        home::HomePage,
+        shell::Layout,
+    },
     i18n::t,
 };
 
@@ -18,6 +22,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone()/>
+                // Content-hashed CSS/JS/WASM names (cargo-leptos `hash-files`) let the
+                // service worker cache them as immutable.
+                <HashedStylesheet id="leptos" options=options.clone()/>
                 <HydrationScripts options/>
                 <MetaTags/>
             </head>
@@ -33,7 +40,6 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/dwc.css"/>
         <Link rel="manifest" href="/manifest.webmanifest"/>
         <Meta name="theme-color" content="#1f4e79"/>
         <Title text=t("app.name")/>
@@ -41,6 +47,8 @@ pub fn App() -> impl IntoView {
             <Layout>
                 <Routes fallback=NotFound>
                     <Route path=path!("") view=HomePage/>
+                    <Route path=path!("admin") view=AdminPage/>
+                    <Route path=path!("admin/auditores") view=AuditorsPage/>
                 </Routes>
             </Layout>
         </Router>

@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use turso::Connection;
+
 use super::{
     clock::ts,
     db::{Db, query_all},
@@ -113,18 +115,52 @@ impl Flags {
     }
 }
 
-/// Persists a flag value. Takes effect only after the application restarts.
-pub async fn store(db: &Db, key: &str, enabled: bool, by: Option<&str>) -> Result<(), AppError> {
+/// True when this build can honour the flag (false for blocked features).
+pub fn is_implemented(key: &str) -> bool {
+    !NOT_IMPLEMENTED.contains(&key)
+}
+
+/// Values currently stored in the database (may differ from the effective state).
+pub async fn stored(conn: &Connection) -> Result<BTreeMap<String, bool>, turso::Error> {
+    let rows = query_all(conn, "SELECT key, enabled FROM feature_flags", ()).await?;
+    let mut out = BTreeMap::new();
+    for row in rows {
+        out.insert(row.get::<String>(0)?, row.get::<i64>(1)? == 1);
+    }
+    Ok(out)
+}
+
+/// Persists a flag value inside the caller's write transaction. Takes effect only
+/// after the application restarts. Unknown keys and enabling a blocked feature fail.
+pub async fn store_in(
+    conn: &Connection,
+    now: chrono::DateTime<chrono::Utc>,
+    key: &str,
+    enabled: bool,
+    by: Option<&str>,
+) -> Result<(), AppError> {
     if !CATALOG.iter().any(|d| d.key == key) {
         return Err(AppError::validation("key", "flag desconhecida"));
     }
-    let tx = db.write().await?;
-    tx.execute(
+    if enabled && !is_implemented(key) {
+        return Err(AppError::validation(
+            "key",
+            "funcionalidade não implementada",
+        ));
+    }
+    conn.execute(
         "INSERT INTO feature_flags (key, enabled, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(key) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
-        (key, enabled as i64, ts(chrono::Utc::now()), by),
+        (key, enabled as i64, ts(now), by),
     )
     .await?;
+    Ok(())
+}
+
+/// Persists a flag value in its own transaction (fixtures/CLI).
+pub async fn store(db: &Db, key: &str, enabled: bool, by: Option<&str>) -> Result<(), AppError> {
+    let tx = db.write().await?;
+    store_in(&tx, chrono::Utc::now(), key, enabled, by).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -168,5 +204,7 @@ mod tests {
         assert!(!flags.is_enabled("admin.bypass"));
         assert!(!flags.is_enabled(VOTING_PRIVATE));
         assert!(store(&t.db, "admin.bypass", true, None).await.is_err());
+        assert!(store(&t.db, VOTING_PRIVATE, true, None).await.is_err());
+        assert!(store(&t.db, VOTING_PRIVATE, false, None).await.is_ok());
     }
 }

@@ -18,7 +18,22 @@ serde_json = "1"
 thiserror = "2"
 console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen = { version = "=0.2.129", optional = true }
-web-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Location",
+    "Navigator",
+    "MediaDevices",
+    "MediaStream",
+    "MediaStreamTrack",
+    "MediaStreamConstraints",
+    "HtmlMediaElement",
+    "HtmlVideoElement",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "DomException",
+] }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+base64 = "0.22"
 
 # Server-only dependencies
 axum = { version = "0.8.9", optional = true }
@@ -35,8 +50,11 @@ hex = { version = "0.4", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"], optional = true }
-base64 = { version = "0.22.1", optional = true }
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"], optional = true }
+argon2 = { version = "0.6", optional = true }
+totp-rs = { version = "6", features = ["otpauth"], optional = true }
+qrcode = { version = "0.14", default-features = false, features = ["svg"], optional = true }
+chacha20poly1305 = { version = "0.11", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -48,6 +66,8 @@ hydrate = [
     "dep:console_error_panic_hook",
     "dep:wasm-bindgen",
     "dep:web-sys",
+    "dep:wasm-bindgen-futures",
+    "dep:js-sys",
 ]
 ssr = [
     "dep:axum",
@@ -64,12 +84,21 @@ ssr = [
     "dep:tracing",
     "dep:tracing-subscriber",
     "dep:reqwest",
-    "dep:base64",
     "dep:ed25519-dalek",
+    "dep:argon2",
+    "dep:totp-rs",
+    "dep:qrcode",
+    "dep:chacha20poly1305",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",
 ]
+
+# Argon2 at the production cost is too slow unoptimized; keep tests realistic and fast.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
 
 [profile.wasm-release]
 inherits = "release"
@@ -100,4 +129,8 @@ required-features = ["ssr"]
 
 [[test]]
 name = "e2e_audit"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_identity"
 required-features = ["ssr"]

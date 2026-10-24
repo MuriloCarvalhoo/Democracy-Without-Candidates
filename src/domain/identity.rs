@@ -132,9 +132,54 @@ pub fn password_acceptable(password: &str) -> bool {
     (PASSWORD_MIN..=PASSWORD_MAX).contains(&password.chars().count())
 }
 
+pub const NAME_MAX: usize = 120;
+
+/// Display name: trimmed, inner whitespace collapsed, 2–120 characters, no controls.
+pub fn normalize_name(raw: &str) -> Option<String> {
+    let name = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let len = name.chars().count();
+    ((2..=NAME_MAX).contains(&len) && !name.chars().any(char::is_control)).then_some(name)
+}
+
+/// Profile and default vote visibility chosen by the citizen. Private by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Visibility {
+    Public,
+    #[default]
+    Private,
+}
+
+impl Visibility {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "public" => Some(Self::Public),
+            "private" => Some(Self::Private),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_normalization() {
+        assert_eq!(
+            normalize_name("  Ana   Maria ").as_deref(),
+            Some("Ana Maria")
+        );
+        assert_eq!(normalize_name("A"), None);
+        assert_eq!(normalize_name(&"a".repeat(121)), None);
+        assert_eq!(Visibility::default(), Visibility::Private);
+    }
 
     #[test]
     fn email_normalization() {

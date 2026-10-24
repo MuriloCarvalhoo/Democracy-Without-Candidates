@@ -56,7 +56,12 @@ pub struct Config {
     pub session_idle_secs: i64,
     pub session_absolute_secs: i64,
     pub secure_cookies: bool,
+    /// BrasilAPI base URL. Overridable (`DWC_BRASILAPI_URL`) only outside production,
+    /// so tests can point at a local mock.
+    pub brasilapi_url: String,
 }
+
+pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -153,6 +158,17 @@ impl Config {
             _ => db_path.with_file_name("audit-signing.key"),
         };
 
+        let brasilapi_url = match get("DWC_BRASILAPI_URL") {
+            None => BRASILAPI_URL.to_owned(),
+            Some(_) if production => {
+                return Err(ConfigError::Invalid(
+                    "DWC_BRASILAPI_URL",
+                    "fixed in production".into(),
+                ));
+            }
+            Some(url) => url.trim_end_matches('/').to_owned(),
+        };
+
         let parse_secs = |key: &'static str, default: i64| -> Result<i64, ConfigError> {
             match get(key) {
                 None => Ok(default),
@@ -180,6 +196,7 @@ impl Config {
             session_idle_secs: parse_secs("DWC_SESSION_IDLE_SECS", 15 * 60)?,
             session_absolute_secs: parse_secs("DWC_SESSION_ABSOLUTE_SECS", 8 * 60 * 60)?,
             secure_cookies: production,
+            brasilapi_url,
         })
     }
 
@@ -303,6 +320,13 @@ mod tests {
         let mut with_override = base.to_vec();
         with_override.push(("DWC_SESSION_IDLE_SECS", "5"));
         assert!(cfg(&with_override).is_err());
+        let mut mock_cep = base.to_vec();
+        mock_cep.push(("DWC_BRASILAPI_URL", "http://127.0.0.1:9"));
+        assert!(
+            cfg(&mock_cep).is_err(),
+            "address mock rejected in production"
+        );
+        assert_eq!(c.brasilapi_url, BRASILAPI_URL);
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod address;
 pub mod catalog;
 pub mod clock;
 pub mod config;
@@ -8,4 +9,7 @@ pub mod face_service;
 pub mod fixtures;
 pub mod flags;
 pub mod migrations;
+pub mod password;
+pub mod secrets;
 pub mod signing;
+pub mod totp;

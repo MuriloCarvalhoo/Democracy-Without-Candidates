@@ -28,3 +28,32 @@ pub fn action_error<T: Clone + Send + Sync + 'static>(
         _ => None,
     }
 }
+
+/// Full page load: used after sign-in/out so the layout re-reads the session.
+pub fn hard_navigate(path: &str) {
+    #[cfg(feature = "hydrate")]
+    {
+        let _ = window().location().set_href(path);
+    }
+    #[cfg(not(feature = "hydrate"))]
+    let _ = path;
+}
+
+/// Shows the recovery codes once, with guidance to store them.
+#[component]
+pub fn RecoveryCodes(codes: Vec<String>) -> impl IntoView {
+    view! {
+        <section class="card" aria-labelledby="codes-title">
+            <h2 id="codes-title">{t("auth.codes.title")}</h2>
+            <p>{t("auth.codes.hint")}</p>
+            <ol class="codes" data-testid="recovery-codes">
+                {codes.into_iter().map(|c| view! { <li><code>{c}</code></li> }).collect_view()}
+            </ol>
+        </section>
+    }
+}
+
+/// Error from a signal, rendered when present.
+pub fn error_view(error: RwSignal<Option<AppError>>) -> impl IntoView {
+    move || error.get().map(|error| view! { <ErrorNotice error/> })
+}

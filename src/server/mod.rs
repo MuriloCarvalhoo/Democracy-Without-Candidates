@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::{
     application::session::SessionPolicy,
-    infrastructure::{clock::Clock, config::Config, db::Db, flags::Flags},
+    infrastructure::{clock::Clock, config::Config, db::Db, face::FaceVerifier, flags::Flags},
 };
 
 /// Process-wide state provided to every SSR render and server function.
@@ -18,6 +18,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub flags: Arc<Flags>,
     pub clock: Arc<dyn Clock>,
+    pub face: FaceVerifier,
 }
 
 impl AppState {

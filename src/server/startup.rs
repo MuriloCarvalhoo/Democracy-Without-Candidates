@@ -7,7 +7,14 @@ use leptos::prelude::get_configuration;
 
 use super::{AppState, http::router};
 use crate::infrastructure::{
-    catalog, clock::SystemClock, config::Config, db::Db, flags::Flags, migrations,
+    catalog,
+    clock::SystemClock,
+    config::{Config, IdentityProviderKind},
+    db::Db,
+    face::FaceVerifier,
+    face_service::FaceServiceClient,
+    flags::Flags,
+    migrations,
 };
 
 /// `dwc` serves; `dwc seed-dev` writes synthetic fixtures (non-production only).
@@ -70,11 +77,18 @@ async fn serve(
         .map_err(|e| format!("feature flags: {e}"))?;
     tracing::info!(enabled = ?flags.enabled_keys(), env = ?config.env, country = config.country.code, "configuration loaded");
 
+    let face = match (config.identity_provider, &config.face_service_url) {
+        (IdentityProviderKind::FaceService, Some(url)) => {
+            FaceVerifier::Service(FaceServiceClient::new(url))
+        }
+        _ => FaceVerifier::Synthetic,
+    };
     let state = AppState {
         db,
         config: Arc::new(config),
         flags: Arc::new(flags),
         clock: Arc::new(SystemClock),
+        face,
     };
     let app = router(state, leptos_options);
 

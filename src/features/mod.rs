@@ -2,5 +2,6 @@
 //! input, resolve the caller and delegate to application use cases.
 
 pub mod home;
+pub mod reauth;
 pub mod shell;
 pub mod ui;

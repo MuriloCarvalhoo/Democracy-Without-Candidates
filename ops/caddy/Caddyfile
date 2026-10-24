@@ -1,0 +1,18 @@
+# Reverse proxy example: automatic HTTPS, the app stays on loopback.
+# The app already sends nosniff, frame, referrer and permissions headers (and HSTS in
+# production); CSRF protection compares Origin with DWC_PUBLIC_ORIGIN, so keep Host/Origin.
+<subdominio> {
+	encode zstd gzip
+	request_body {
+		max_size 2MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	# Content-hashed build assets are immutable; the service worker must revalidate.
+	@pkg path /pkg/*
+	header @pkg Cache-Control "public, max-age=31536000, immutable"
+	header /sw.js Cache-Control "no-cache"
+	reverse_proxy 127.0.0.1:3000
+}

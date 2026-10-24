@@ -6,7 +6,10 @@
 //! `VACUUM INTO` from a connection of the process that owns the database: the
 //! running server (SIGUSR1) or `dwc backup` on a stopped instance.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
@@ -45,12 +48,26 @@ pub async fn snapshot(db: &Db, dest: &Path) -> Result<(), BackupError> {
     if let Some(parent) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
+    // The engine may leave an (empty, already checkpointed) WAL next to the copy.
+    let wal = PathBuf::from(format!("{tmp_str}-wal"));
     let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&wal);
     let conn = db.read().await?;
     // VACUUM INTO takes a literal path only (no bound parameters).
-    if let Err(e) = conn.execute(&format!("VACUUM INTO '{tmp_str}'"), ()).await {
+    let result = conn.execute(&format!("VACUUM INTO '{tmp_str}'"), ()).await;
+    drop(conn);
+    let wal_bytes = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+    let _ = std::fs::remove_file(&wal);
+    if let Err(e) = result {
         let _ = std::fs::remove_file(&tmp);
         return Err(e.into());
+    }
+    if wal_bytes > 0 {
+        // Never ship a main file whose last pages may live only in a WAL.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(BackupError::Invalid(
+            "engine left a non-empty WAL for the copy; snapshot discarded".into(),
+        ));
     }
     std::fs::rename(&tmp, dest)?;
     Ok(())
@@ -178,6 +195,7 @@ mod tests {
         let dest = t.dir.path().join("snap/copy.db");
         snapshot(&t.db, &dest).await.unwrap();
         assert!(!dest.with_extension("partial").exists());
+        assert!(!t.dir.path().join("snap/copy.partial-wal").exists());
         assert!(
             snapshot(&t.db, &dest).await.is_err(),
             "never overwrites an existing file"

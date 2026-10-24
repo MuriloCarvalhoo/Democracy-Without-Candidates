@@ -8,6 +8,10 @@ publish = false
 # Separate packages with their own workspace/lockfile (e.g. tools/load).
 exclude = ["tools/"]
 
+# Standalone workspace: never join a parent manifest; tools/load has its own.
+[workspace]
+exclude = ["tools/load"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

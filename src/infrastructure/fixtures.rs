@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     application::{
-        actor, phases,
+        actor, debate, phases,
         proposals::{self, Ctx},
         reauth,
         session::{self, SessionPolicy},
@@ -290,6 +290,7 @@ async fn seed_legislative(
         ),
     ];
     let mut done = vec!["synthetic national setup adopted (suggested package)".to_owned()];
+    let mut ids = Vec::new();
     for (title, kind, level, author, shift) in samples {
         // Positive shift: one extra signature; negative: published in the past.
         let at = now + chrono::Duration::days(shift.min(0));
@@ -324,14 +325,99 @@ async fn seed_legislative(
             proposals::withdraw(&ctx, &a, &id, "Retirada sintética de demonstração").await?;
         }
         done.push(format!("proposal {id}: {title}"));
+        ids.push((title, id));
     }
     phases::advance_due(db, now).await?;
+    let id_of = |prefix: &str| {
+        ids.iter()
+            .find(|(t, _)| t.starts_with(prefix))
+            .map(|(_, id)| id.clone())
+            .ok_or(AppError::Internal)
+    };
+    done.push(
+        seed_debate(
+            db,
+            &flags,
+            tz,
+            now,
+            &actor_of,
+            &id_of("Reforma")?,
+            &id_of("Ciclovia")?,
+        )
+        .await?,
+    );
     let tx = db.write().await?;
     for (_, hash) in &citizens {
         session::revoke(&tx, now, hash, "seed-dev").await?;
     }
     tx.commit().await?;
     Ok(done)
+}
+
+/// Synthetic comments, a reply chain and an amendment on seeded proposals.
+async fn seed_debate<F, Fut>(
+    db: &Db,
+    flags: &flags::Flags,
+    tz: chrono_tz::Tz,
+    now: chrono::DateTime<chrono::Utc>,
+    actor_of: &F,
+    in_debate: &str,
+    collecting: &str,
+) -> Result<String, AppError>
+where
+    F: Fn(usize) -> Fut,
+    Fut: std::future::Future<Output = Result<crate::application::actor::Actor, AppError>>,
+{
+    let ctx = Ctx { db, flags, now, tz };
+    let first = debate::post_comment(
+        &ctx,
+        &actor_of(0).await?,
+        in_debate,
+        None,
+        "[Sintético] Sugiro incluir bancos com sombra e bebedouros na reforma.",
+    )
+    .await?;
+    let reply = debate::post_comment(
+        &ctx,
+        &actor_of(1).await?,
+        in_debate,
+        Some(&first),
+        "[Sintético] Concordo, e com rampas de acessibilidade.",
+    )
+    .await?;
+    debate::post_comment(
+        &ctx,
+        &actor_of(2).await?,
+        in_debate,
+        Some(&reply),
+        "[Sintético] Obrigado! Isso pode entrar numa nova versão da proposta.",
+    )
+    .await?;
+    debate::post_comment(
+        &ctx,
+        &actor_of(3).await?,
+        in_debate,
+        None,
+        "[Sintético] Qual é o custo estimado da obra?",
+    )
+    .await?;
+    debate::propose_amendment(
+        &ctx,
+        &actor_of(4).await?,
+        in_debate,
+        "[Sintético] Incluir acessibilidade",
+        "Art. 1º-A A reforma incluirá rampas e piso tátil em todos os acessos.",
+    )
+    .await?;
+    debate::post_comment(
+        &ctx,
+        &actor_of(5).await?,
+        collecting,
+        None,
+        "[Sintético] Uma ciclovia aqui ligaria o centro à universidade.",
+    )
+    .await?;
+    Ok("debate fixtures: 5 comments, 1 amendment".into())
 }
 
 #[cfg(test)]
@@ -464,5 +550,17 @@ mod tests {
         .get(0)
         .unwrap();
         assert_eq!(open, 0, "seed sessions are revoked");
+        let debate: (i64, i64) = {
+            let row = query_opt(
+                &conn,
+                "SELECT (SELECT COUNT(*) FROM comments), (SELECT COUNT(*) FROM amendments)",
+                (),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            (row.get(0).unwrap(), row.get(1).unwrap())
+        };
+        assert_eq!(debate, (5, 1), "synthetic debate seeded once");
     }
 }

@@ -8,3 +8,4 @@ pub mod face_service;
 pub mod fixtures;
 pub mod flags;
 pub mod migrations;
+pub mod signing;

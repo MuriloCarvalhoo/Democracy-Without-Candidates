@@ -36,6 +36,7 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"], optional = true }
 base64 = { version = "0.22.1", optional = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -64,6 +65,7 @@ ssr = [
     "dep:tracing-subscriber",
     "dep:reqwest",
     "dep:base64",
+    "dep:ed25519-dalek",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",
@@ -94,4 +96,8 @@ lib-profile-release = "wasm-release"
 
 [[test]]
 name = "e2e"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_audit"
 required-features = ["ssr"]

@@ -1,15 +1,25 @@
 //! Append-only audit events with a local SHA-256 chain. Payloads must be minimal:
 //! never passwords, secrets, biometrics, IPs or anything linking a private ballot.
 
-use serde_json::Value;
-use turso::Connection;
+use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
+use turso::{Connection, Value};
+
+use super::actor::Actor;
 use crate::{
+    domain::{
+        audit::{
+            ChainSummary, EventView, PAGE_SIZE, RESTRICTED_ACCESS, forbidden_payload_key,
+            valid_kind,
+        },
+        identity::Permission,
+    },
     error::AppError,
     infrastructure::{
         clock::ts,
         crypto::sha256_hex,
-        db::{query_all, query_opt},
+        db::{Db, query_all, query_opt},
     },
 };
 
@@ -35,21 +45,41 @@ pub struct Event<'a> {
     pub visibility: Visibility,
     pub actor_ref: Option<&'a str>,
     pub subject: Option<&'a str>,
-    pub payload: Value,
+    pub payload: serde_json::Value,
+}
+
+/// First object key (at any depth) naming data that must not be audited.
+fn has_forbidden_key(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => map.iter().find_map(|(k, v)| {
+            if forbidden_payload_key(k) {
+                Some(k.clone())
+            } else {
+                has_forbidden_key(v)
+            }
+        }),
+        serde_json::Value::Array(items) => items.iter().find_map(has_forbidden_key),
+        _ => None,
+    }
 }
 
 /// Hash of the previous hash followed by the stored fields
 /// `[seq, occurred_at, kind, visibility, actor_ref, subject, payload]`.
-fn chain_hash(prev: &str, fields: Value) -> String {
+fn chain_hash(prev: &str, fields: serde_json::Value) -> String {
     sha256_hex(serde_json::json!([prev, fields]).to_string())
 }
 
 /// Appends inside the caller's write transaction so the event commits with the effect.
+/// Payloads with keys naming secrets/biometrics/contact/IP/ballot data are refused.
 pub async fn append(
     conn: &Connection,
-    now: chrono::DateTime<chrono::Utc>,
+    now: DateTime<Utc>,
     event: Event<'_>,
 ) -> Result<i64, AppError> {
+    if let Some(key) = has_forbidden_key(&event.payload) {
+        tracing::error!(kind = event.kind, %key, "refused audit payload with forbidden key");
+        return Err(AppError::Internal);
+    }
     let (prev_seq, prev_hash) = match query_opt(
         conn,
         "SELECT seq, hash FROM audit_events ORDER BY seq DESC LIMIT 1",
@@ -91,40 +121,245 @@ pub enum ChainStatus {
     Broken { at_seq: i64 },
 }
 
+impl From<ChainStatus> for ChainSummary {
+    fn from(status: ChainStatus) -> Self {
+        match status {
+            ChainStatus::Valid { events, head } => Self::Valid { events, head },
+            ChainStatus::Broken { at_seq } => Self::Broken { at_seq },
+        }
+    }
+}
+
 /// Recomputes the whole chain. Detects edits/gaps in the local copy only.
 pub async fn verify(conn: &Connection) -> Result<ChainStatus, AppError> {
-    let rows = query_all(
-        conn,
-        "SELECT seq, occurred_at, kind, visibility, actor_ref, subject, payload, prev_hash, hash FROM audit_events ORDER BY seq",
-        (),
-    )
-    .await?;
-    let mut prev = GENESIS.to_owned();
-    for (expected_seq, row) in (1..).zip(rows.iter()) {
+    walk(conn, 0, GENESIS, i64::MAX, &mut Kinds::new()).await
+}
+
+/// Event kind → whether any event of that kind is public.
+type Kinds = BTreeMap<String, bool>;
+
+/// Streams events with `after_seq < seq <= until`, continuing from `after_hash`.
+/// `Valid.events` is the last verified seq (seqs are contiguous from 1). Kinds seen
+/// are collected into `kinds`.
+pub(crate) async fn walk(
+    conn: &Connection,
+    after_seq: i64,
+    after_hash: &str,
+    until: i64,
+    kinds: &mut Kinds,
+) -> Result<ChainStatus, AppError> {
+    let mut rows = conn
+        .query(
+            "SELECT seq, occurred_at, kind, visibility, actor_ref, subject, payload, prev_hash, hash
+             FROM audit_events WHERE seq > ?1 AND seq <= ?2 ORDER BY seq",
+            (after_seq, until),
+        )
+        .await?;
+    let mut prev = after_hash.to_owned();
+    let mut last = after_seq;
+    while let Some(row) = rows.next().await? {
         let seq: i64 = row.get(0)?;
         let prev_hash: String = row.get(7)?;
         let hash: String = row.get(8)?;
+        let (kind, visibility): (String, String) = (row.get(2)?, row.get(3)?);
         let recomputed = chain_hash(
             &prev,
             serde_json::json!([
                 seq,
                 row.get::<String>(1)?,
-                row.get::<String>(2)?,
-                row.get::<String>(3)?,
+                kind,
+                visibility,
                 row.get::<Option<String>>(4)?,
                 row.get::<Option<String>>(5)?,
                 row.get::<String>(6)?,
             ]),
         );
-        if seq != expected_seq || prev_hash != prev || recomputed != hash {
+        *kinds.entry(kind).or_default() |= visibility == "public";
+        if seq != last + 1 || prev_hash != prev || recomputed != hash {
             return Ok(ChainStatus::Broken { at_seq: seq });
         }
         prev = hash;
+        last = seq;
     }
     Ok(ChainStatus::Valid {
-        events: rows.len() as i64,
+        events: last,
         head: prev,
     })
+}
+
+/// Full recomputation interval for [`summary`]; in between, only new events are
+/// verified on top of the last verified head.
+pub const FULL_RECHECK: chrono::Duration = chrono::Duration::minutes(10);
+
+struct Verified {
+    seq: i64,
+    head: String,
+    full_at: DateTime<Utc>,
+    kinds: Kinds,
+}
+
+/// Chain status plus the event kinds collected while verifying (for filters).
+pub struct ChainView {
+    pub status: ChainStatus,
+    kinds: Kinds,
+}
+
+impl ChainView {
+    pub fn kinds(&self, scope: Scope) -> Vec<String> {
+        self.kinds
+            .iter()
+            .filter(|(_, public)| scope == Scope::Restricted || **public)
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+}
+
+/// Process-local cache of the last verified head (one process owns the database).
+#[derive(Default)]
+pub struct ChainCache(tokio::sync::Mutex<Option<Verified>>);
+
+/// Chain status for display. Incremental between full recomputations, so the
+/// cost per request is proportional to new events. A rewrite of already verified
+/// rows is detected at the next full pass (and at every process start).
+pub async fn summary(
+    conn: &Connection,
+    cache: &ChainCache,
+    now: DateTime<Utc>,
+) -> Result<ChainView, AppError> {
+    let mut cached = cache.0.lock().await;
+    let (status, full_at, mut kinds) = match cached.take() {
+        Some(mut v) if now - v.full_at < FULL_RECHECK => {
+            let status = walk(conn, v.seq, &v.head, i64::MAX, &mut v.kinds).await?;
+            (status, v.full_at, v.kinds)
+        }
+        _ => {
+            let mut kinds = Kinds::new();
+            (
+                walk(conn, 0, GENESIS, i64::MAX, &mut kinds).await?,
+                now,
+                kinds,
+            )
+        }
+    };
+    match &status {
+        ChainStatus::Valid { events, head } => {
+            *cached = Some(Verified {
+                seq: *events,
+                head: head.clone(),
+                full_at,
+                kinds: kinds.clone(),
+            });
+        }
+        ChainStatus::Broken { .. } => {
+            kinds = Kinds::new();
+            for kind in self::kinds(conn, Scope::Restricted).await? {
+                kinds.insert(kind, false);
+            }
+            for kind in self::kinds(conn, Scope::Public).await? {
+                kinds.insert(kind, true);
+            }
+        }
+    }
+    Ok(ChainView { status, kinds })
+}
+
+/// Who is reading: public visitors never receive restricted events or actor refs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    Public,
+    Restricted,
+}
+
+/// Newest-first page of events with `seq < before`, optionally of one kind.
+pub async fn list(
+    conn: &Connection,
+    scope: Scope,
+    kind: Option<&str>,
+    before: Option<i64>,
+) -> Result<(Vec<EventView>, Option<i64>), AppError> {
+    if kind.is_some_and(|k| !valid_kind(k)) {
+        return Err(AppError::validation("kind", "tipo de evento inválido"));
+    }
+    let mut sql = String::from(
+        "SELECT seq, occurred_at, kind, visibility, actor_ref, subject, payload, hash FROM audit_events WHERE seq < ?1",
+    );
+    let mut params = vec![Value::Integer(before.unwrap_or(i64::MAX))];
+    if scope == Scope::Public {
+        sql.push_str(" AND visibility = 'public'");
+    }
+    if let Some(kind) = kind {
+        sql.push_str(" AND kind = ?2");
+        params.push(Value::Text(kind.to_owned()));
+    }
+    sql.push_str(&format!(" ORDER BY seq DESC LIMIT {}", PAGE_SIZE + 1));
+    let mut events = Vec::new();
+    for row in query_all(conn, &sql, params).await? {
+        let restricted = row.get::<String>(3)? == "restricted";
+        events.push(EventView {
+            seq: row.get(0)?,
+            occurred_at: row.get(1)?,
+            kind: row.get(2)?,
+            restricted,
+            actor_ref: match scope {
+                Scope::Restricted => row.get(4)?,
+                Scope::Public => None,
+            },
+            subject: row.get(5)?,
+            payload: row.get(6)?,
+            hash: row.get(7)?,
+        });
+    }
+    let next = (events.len() > PAGE_SIZE as usize).then(|| {
+        events.truncate(PAGE_SIZE as usize);
+        events.last().map(|e| e.seq)
+    });
+    Ok((events, next.flatten()))
+}
+
+/// Distinct kinds visible in `scope`, for the filter.
+pub async fn kinds(conn: &Connection, scope: Scope) -> Result<Vec<String>, AppError> {
+    let sql = match scope {
+        Scope::Public => {
+            "SELECT DISTINCT kind FROM audit_events WHERE visibility = 'public' ORDER BY kind"
+        }
+        Scope::Restricted => "SELECT DISTINCT kind FROM audit_events ORDER BY kind",
+    };
+    query_all(conn, sql, ())
+        .await?
+        .into_iter()
+        .map(|r| r.get::<String>(0).map_err(AppError::from))
+        .collect()
+}
+
+/// Restricted read for auditors/country admins. The access itself is appended
+/// (and committed) before any restricted data is returned; if that fails, the
+/// read is denied.
+pub async fn read_restricted(
+    db: &Db,
+    now: DateTime<Utc>,
+    actor: &Actor,
+    kind: Option<&str>,
+    before: Option<i64>,
+) -> Result<(Vec<EventView>, Option<i64>), AppError> {
+    actor.require(Permission::AuditReadRestricted)?;
+    if kind.is_some_and(|k| !valid_kind(k)) {
+        return Err(AppError::validation("kind", "tipo de evento inválido"));
+    }
+    let tx = db.write().await?;
+    append(
+        &tx,
+        now,
+        Event {
+            kind: RESTRICTED_ACCESS,
+            visibility: Visibility::Restricted,
+            actor_ref: Some(&actor.user_id),
+            subject: Some(&actor.country_id),
+            payload: serde_json::json!({ "scope": "country", "kind": kind, "before": before }),
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    list(&db.read().await?, Scope::Restricted, kind, before).await
 }
 
 #[cfg(test)]
@@ -196,6 +431,267 @@ mod tests {
                 events: 0,
                 head: GENESIS.into()
             }
+        );
+    }
+
+    use crate::{
+        application::session::{self, SessionPolicy, testing::citizen_with_session},
+        infrastructure::catalog,
+    };
+
+    fn ev<'a>(kind: &'a str, visibility: Visibility, actor_ref: Option<&'a str>) -> Event<'a> {
+        Event {
+            kind,
+            visibility,
+            actor_ref,
+            subject: Some("subject"),
+            payload: json!({ "n": 1 }),
+        }
+    }
+
+    async fn actor_with_roles(db: &Db, roles: &[&str]) -> Actor {
+        let now = Utc::now();
+        let policy = SessionPolicy::from_secs(900, 28800);
+        let (user, token) = citizen_with_session(db, now, policy, "4202404").await;
+        let tx = db.write().await.unwrap();
+        tx.execute("DELETE FROM user_roles WHERE user_id = ?1", [user.as_str()])
+            .await
+            .unwrap();
+        for role in roles {
+            tx.execute(
+                "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, ?2, 'now')",
+                (user.as_str(), *role),
+            )
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+        session::resolve(db, now, policy, &token, false)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn public_listing_hides_restricted_events_and_paginates() {
+        let t = migrated().await;
+        let now = Utc::now();
+        let tx = t.db.write().await.unwrap();
+        for i in 0..(PAGE_SIZE + 5) {
+            let kind = if i % 2 == 0 { "a.even" } else { "a.odd" };
+            append(&tx, now, ev(kind, Visibility::Public, Some("u1")))
+                .await
+                .unwrap();
+            append(&tx, now, ev("b.secret", Visibility::Restricted, Some("u1")))
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+        let conn = t.db.read().await.unwrap();
+        let (page, next) = list(&conn, Scope::Public, None, None).await.unwrap();
+        assert_eq!(page.len(), PAGE_SIZE as usize);
+        assert!(page.iter().all(|e| !e.restricted && e.actor_ref.is_none()));
+        assert!(page.windows(2).all(|w| w[0].seq > w[1].seq));
+        let (rest, end) = list(&conn, Scope::Public, None, next).await.unwrap();
+        assert_eq!(rest.len(), 5);
+        assert_eq!(end, None);
+        let (odd, _) = list(&conn, Scope::Public, Some("a.odd"), None)
+            .await
+            .unwrap();
+        assert!(odd.iter().all(|e| e.kind == "a.odd"));
+        assert!(
+            list(&conn, Scope::Public, Some("b.secret"), None)
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
+        assert!(matches!(
+            list(&conn, Scope::Public, Some("x' OR 1=1"), None).await,
+            Err(AppError::Validation { .. })
+        ));
+        assert_eq!(
+            kinds(&conn, Scope::Public).await.unwrap(),
+            vec!["a.even", "a.odd"]
+        );
+        let (all, _) = list(&conn, Scope::Restricted, None, None).await.unwrap();
+        assert!(
+            all.iter()
+                .any(|e| e.restricted && e.actor_ref.as_deref() == Some("u1"))
+        );
+    }
+
+    #[tokio::test]
+    async fn restricted_read_requires_permission_and_logs_each_access() {
+        let t = migrated().await;
+        catalog::import_str(&t.db, "mini", "code,kind,name,parent_code,state_abbrev\nBR,national,Brasil,,\n42,state,SC,BR,SC\n4202404,municipal,Blumenau,42,SC\n").await.unwrap();
+        let now = Utc::now();
+        let tx = t.db.write().await.unwrap();
+        append(&tx, now, ev("b.secret", Visibility::Restricted, Some("u1")))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let citizen = actor_with_roles(&t.db, &["CITIZEN"]).await;
+        assert_eq!(
+            read_restricted(&t.db, now, &citizen, None, None).await,
+            Err(AppError::Forbidden)
+        );
+        let count = |db: Db| async move {
+            match verify(&db.read().await.unwrap()).await.unwrap() {
+                ChainStatus::Valid { events, .. } => events,
+                other => panic!("{other:?}"),
+            }
+        };
+        assert_eq!(
+            count(t.db.clone()).await,
+            1,
+            "denied read is not logged as access"
+        );
+
+        for roles in [&["AUDITOR"][..], &["COUNTRY_ADMIN"][..]] {
+            let reader = actor_with_roles(&t.db, roles).await;
+            let (events, _) = read_restricted(&t.db, now, &reader, None, None)
+                .await
+                .unwrap();
+            let access = &events[0];
+            assert_eq!(
+                access.kind, RESTRICTED_ACCESS,
+                "access logged before reading"
+            );
+            assert!(access.restricted);
+            assert_eq!(access.actor_ref.as_deref(), Some(reader.user_id.as_str()));
+            assert!(events.iter().any(|e| e.kind == "b.secret"));
+        }
+        assert_eq!(count(t.db.clone()).await, 3);
+
+        let mut pending_auditor = actor_with_roles(&t.db, &["AUDITOR"]).await;
+        pending_auditor.status = crate::domain::identity::AccountStatus::Pending;
+        assert_eq!(
+            read_restricted(&t.db, now, &pending_auditor, None, None).await,
+            Err(AppError::Forbidden)
+        );
+    }
+
+    #[tokio::test]
+    async fn forbidden_payload_keys_are_refused() {
+        let t = migrated().await;
+        let tx = t.db.write().await.unwrap();
+        let mut event = ev("x", Visibility::Restricted, None);
+        event.payload = json!({ "ok": [{ "user_email": "a@b.c" }] });
+        assert_eq!(
+            append(&tx, Utc::now(), event).await,
+            Err(AppError::Internal)
+        );
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn summary_verifies_incrementally_and_rechecks_fully() {
+        let t = migrated().await;
+        let cache = ChainCache::default();
+        let now = Utc::now();
+        let add = |n: usize| {
+            let db = t.db.clone();
+            async move {
+                let tx = db.write().await.unwrap();
+                for _ in 0..n {
+                    append(&tx, now, ev("k", Visibility::Public, None))
+                        .await
+                        .unwrap();
+                }
+                tx.commit().await.unwrap();
+            }
+        };
+        add(3).await;
+        let conn = t.db.read().await.unwrap();
+        assert!(matches!(
+            summary(&conn, &cache, now).await.unwrap().status,
+            ChainStatus::Valid { events: 3, .. }
+        ));
+        add(2).await;
+        let tx = t.db.write().await.unwrap();
+        append(&tx, now, ev("r.only", Visibility::Restricted, None))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let incremental = summary(&conn, &cache, now + chrono::Duration::minutes(1))
+            .await
+            .unwrap();
+        assert_eq!(incremental.status, verify(&conn).await.unwrap());
+        assert!(matches!(
+            incremental.status,
+            ChainStatus::Valid { events: 6, .. }
+        ));
+        assert_eq!(incremental.kinds(Scope::Public), vec!["k"]);
+        assert_eq!(incremental.kinds(Scope::Restricted), vec!["k", "r.only"]);
+        let full = summary(&conn, &cache, now + FULL_RECHECK).await.unwrap();
+        assert_eq!(full.status, incremental.status);
+        assert_eq!(
+            full.kinds(Scope::Restricted),
+            incremental.kinds(Scope::Restricted)
+        );
+    }
+
+    /// Timing evidence: `cargo test --release --features ssr verify_100k -- --ignored --nocapture`.
+    #[tokio::test]
+    #[ignore = "performance measurement"]
+    async fn verify_100k_events_timing() {
+        let t = migrated().await;
+        let now = Utc::now();
+        let start = std::time::Instant::now();
+        let tx = t.db.write().await.unwrap();
+        for i in 0..100_000 {
+            let mut e = ev("proposal.created", Visibility::Public, None);
+            e.payload = json!({ "proposal_id": i, "text_hash": "ab".repeat(32) });
+            append(&tx, now, e).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+        let appended = start.elapsed();
+        let conn = t.db.read().await.unwrap();
+        let start = std::time::Instant::now();
+        let status = verify(&conn).await.unwrap();
+        let full = start.elapsed();
+        assert!(matches!(
+            status,
+            ChainStatus::Valid {
+                events: 100_000,
+                ..
+            }
+        ));
+        let cache = ChainCache::default();
+        let start = std::time::Instant::now();
+        summary(&conn, &cache, now).await.unwrap();
+        let first_summary = start.elapsed();
+        let tx = t.db.write().await.unwrap();
+        append(&tx, now, ev("k", Visibility::Public, None))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let start = std::time::Instant::now();
+        let status = summary(&conn, &cache, now).await.unwrap().status;
+        let incremental = start.elapsed();
+        assert!(matches!(
+            status,
+            ChainStatus::Valid {
+                events: 100_001,
+                ..
+            }
+        ));
+        let start = std::time::Instant::now();
+        let (page, _) = list(&conn, Scope::Public, Some("k"), None).await.unwrap();
+        let filtered = start.elapsed();
+        assert_eq!(page.len(), 1);
+        let start = std::time::Instant::now();
+        let (page, _) = list(&conn, Scope::Public, None, None).await.unwrap();
+        let unfiltered = start.elapsed();
+        assert_eq!(page.len(), PAGE_SIZE as usize);
+        let start = std::time::Instant::now();
+        assert_eq!(kinds(&conn, Scope::Public).await.unwrap().len(), 2);
+        let kinds_time = start.elapsed();
+        println!(
+            "100k audit events: append {appended:?}, full verify {full:?}, first cached summary {first_summary:?}, incremental verify (+1) {incremental:?}, \
+             first page {unfiltered:?}, rare-kind page {filtered:?}, distinct kinds {kinds_time:?}"
         );
     }
 }

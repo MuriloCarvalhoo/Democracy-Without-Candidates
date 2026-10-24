@@ -9,7 +9,7 @@
 - Brazil uses BrasilAPI CEP lookup for address autofill. Select/enable the address provider through per-instance database feature flags; retain BrasilAPI response field names in persistence. Country comes from deployment configuration, not the CEP response. Feature flags are loaded at startup; database changes take effect only after application restart. The current address scope uses only returned fields; do not collect house number or complement.
 - Login uses email + password, face and TOTP, without email confirmation or remember-me. Sessions use TursoDB and a host-only HttpOnly/Secure session cookie, expire after 15 minutes idle and retain expiry/revocation across app restart.
 - TOTP recovery uses single-use hashed codes while retaining password/face; password recovery uses face + TOTP without email delivery. Detailed approved flows and agent proposals are in docs/architecture/auth-rbac-flow.md and docs/development/sdd-plan.md.
-- The remaining defaults were delegated by the user for later review: follow the explicitly provisional SDD/PRD baseline, but keep real identity/private voting blocked until evidence. No implementation is authorized by this documentation work.
+- The remaining defaults were delegated by the user for later review: follow the explicitly provisional SDD/PRD baseline, but keep real identity/private voting blocked until evidence.
 - Email identifies the login account; do not require CPF or another national identity document. Email/face matching alone do not establish one-person uniqueness.
 - Online-only product scope. No offline participation, physical voting or physical signature collection. PWA installation does not imply offline operation.
 - Start with one application package, organized into domain, application, infrastructure and feature modules. Add crates or services only for a demonstrated need.
@@ -26,7 +26,7 @@
 ## Spec-driven development
 
 - Read `docs/development/sdd-plan.md` for the approved workflow, decision record and validation strategy. Product questions explicitly listed as open are not settled requirements.
-- Current user scope is documentation only. Do not create application code, install further tools or execute the implementation plan until the user requests implementation.
+- The user requested implementation on 2026-10-24 (branch `feat/implementation`). Implementation decisions taken autonomously are recorded for review in `docs/development/sdd-plan.md`; do not label them approved.
 - Describe each feature with observable requirements, failure cases and acceptance criteria before implementing it. Link important criteria to tests and validation evidence.
 - Resolve material contradictions explicitly. Delegated electoral defaults must be labelled agent proposals for review, not approved production rules. Never claim biometric uniqueness, ballot secrecy or cryptographic guarantees without implementation and validation.
 - Keep the specification and task checklist consistent with the actual result. Record blockers and validation limits; never mark an unexecuted check as passed.
@@ -34,7 +34,11 @@
 
 ## Local execution and validation
 
-- There is currently no Cargo application or runnable test harness. Add and verify actual commands when scaffolding the application; do not report proposed commands as existing tools.
+- Commands (Justfile): `just doctor`, `just dev-seed`, `just dev`, `just check`, `just test`, `just e2e`, `just face-test`, `just load`, `just backup-test`. Verify a command exists before reporting it.
+- `cargo test` rebuilds `target/debug/dwc` with different cfg; browser tests must run through `just e2e`, which copies the cargo-leptos binary.
+- TursoDB: write through `Db::write()` only (one serialized writer; concurrent writers return Busy). The serving process locks the database file, so operator commands run on a stopped instance except online snapshots (SIGUSR1). Avoid triggers with long `OR` chains.
+- Server functions use fixed endpoints (`#[server(endpoint = ...)]`); a `#[server] fn foo_bar` generates a `FooBar` type.
+- Migrations are append-only files registered in `src/infrastructure/migrations.rs` (checksums); never edit an applied migration.
 - Compile both the SSR server and browser WASM targets. Native Rust tests alone do not validate hydration or browser behavior.
 - Test critical rules with Rust tests and persistence with the actual TursoDB engine in isolated disposable databases.
 - Run affected user flows in a real browser. Capture useful evidence, console/network failures and accessibility issues; add reproducible E2E regression tests for critical flows.

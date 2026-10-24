@@ -1,0 +1,16 @@
+[package]
+name = "dwc-load"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Goose load tests for an isolated Democracy Without Candidates instance"
+
+# Own workspace and lockfile: never part of the application build.
+[workspace]
+
+[dependencies]
+goose = { version = "0.18.1", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -29,6 +29,8 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         "home.lead" => {
             "Proponha, debata e vote decisões coletivas com regras definidas por plebiscito."
         }
+        "home.cta.proposals" => "Ver propostas",
+        "home.cta.dashboard" => "Painel de participação",
         "foundation.counter" => "Contador sintético persistido",
         "foundation.increment" => "Incrementar",
         "foundation.confirmed" => "Valor confirmado pelo servidor",

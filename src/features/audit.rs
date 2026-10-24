@@ -204,8 +204,8 @@ fn ListingView(listing: AuditListing, base: &'static str, restricted: bool) -> i
                     <select name="tipo">
                         <option value="">{t("audit.filter.all")}</option>
                         {kinds.into_iter().map(|k| {
-                            let selected = k == current_kind();
-                            view! { <option value=k.clone() selected=selected>{k.clone()}</option> }
+                            let (value, label) = (k.clone(), k.clone());
+                            view! { <option value=k selected=move || value == current_kind()>{label}</option> }
                         }).collect_view()}
                     </select>
                 </label>

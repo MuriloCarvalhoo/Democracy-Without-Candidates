@@ -47,6 +47,8 @@ pub struct Config {
     pub public_origin: String,
     pub identity_provider: IdentityProviderKind,
     pub face_service_url: Option<String>,
+    /// Shared secret sent to the face service; required with `face-service`.
+    pub face_service_key_file: Option<PathBuf>,
     pub secret_key_file: Option<PathBuf>,
     pub session_idle_secs: i64,
     pub session_absolute_secs: i64,
@@ -119,6 +121,9 @@ impl Config {
             ));
         }
         let face_service_url = get("DWC_FACE_SERVICE_URL");
+        let face_service_key_file = get("DWC_FACE_SERVICE_KEY_FILE")
+            .filter(|v| !v.trim().is_empty())
+            .map(PathBuf::from);
         if identity_provider == IdentityProviderKind::FaceService {
             let url = face_service_url
                 .as_deref()
@@ -128,6 +133,9 @@ impl Config {
                     "DWC_FACE_SERVICE_URL",
                     "face service must be loopback".into(),
                 ));
+            }
+            if face_service_key_file.is_none() {
+                return Err(ConfigError::Missing("DWC_FACE_SERVICE_KEY_FILE"));
             }
         }
 
@@ -157,6 +165,7 @@ impl Config {
             public_origin,
             identity_provider,
             face_service_url,
+            face_service_key_file,
             secret_key_file,
             session_idle_secs: parse_secs("DWC_SESSION_IDLE_SECS", 15 * 60)?,
             session_absolute_secs: parse_secs("DWC_SESSION_ABSOLUTE_SECS", 8 * 60 * 60)?,
@@ -248,6 +257,7 @@ mod tests {
             ("DWC_SECRET_KEY_FILE", "/etc/dwc/key"),
             ("DWC_IDENTITY_PROVIDER", "face-service"),
             ("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"),
+            ("DWC_FACE_SERVICE_KEY_FILE", "/etc/dwc/face.key"),
         ];
         let c = cfg(&base).unwrap();
         assert_eq!(c.session_cookie_name(), "__Host-dwc_session");
@@ -260,8 +270,40 @@ mod tests {
     fn face_service_must_be_loopback() {
         let mut pairs = DEV.to_vec();
         pairs[3] = ("DWC_IDENTITY_PROVIDER", "face-service");
+        pairs.push(("DWC_FACE_SERVICE_KEY_FILE", "/etc/dwc/face.key"));
         pairs.push(("DWC_FACE_SERVICE_URL", "http://10.0.0.5:8001"));
-        assert!(cfg(&pairs).is_err());
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Invalid("DWC_FACE_SERVICE_URL", _))
+        ));
+    }
+
+    #[test]
+    fn face_service_requires_key_file() {
+        let mut pairs = DEV.to_vec();
+        pairs[3] = ("DWC_IDENTITY_PROVIDER", "face-service");
+        pairs.push(("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"));
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Missing("DWC_FACE_SERVICE_KEY_FILE"))
+        ));
+        pairs.push(("DWC_FACE_SERVICE_KEY_FILE", "  "));
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Missing("DWC_FACE_SERVICE_KEY_FILE"))
+        ));
+        pairs.pop();
+        pairs.push(("DWC_FACE_SERVICE_KEY_FILE", "/etc/dwc/face.key"));
+        let c = cfg(&pairs).unwrap();
+        assert_eq!(
+            c.face_service_key_file.as_deref(),
+            Some(std::path::Path::new("/etc/dwc/face.key"))
+        );
+    }
+
+    #[test]
+    fn synthetic_does_not_require_face_key() {
+        assert!(cfg(DEV).unwrap().face_service_key_file.is_none());
     }
 
     #[test]

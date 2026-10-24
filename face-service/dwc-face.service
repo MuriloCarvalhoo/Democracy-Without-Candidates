@@ -1,0 +1,35 @@
+# Example systemd unit. Loopback only; the key file is shared with the Rust app
+# (DWC_FACE_SERVICE_KEY_FILE) and must be readable only by both service users.
+[Unit]
+Description=DWC private face engine (loopback)
+After=network.target
+Before=dwc.service
+
+[Service]
+Type=simple
+User=dwc-face
+Group=dwc-face
+WorkingDirectory=/opt/dwc/face-service
+Environment=DWC_FACE_HOST=127.0.0.1
+Environment=DWC_FACE_PORT=8001
+Environment=DWC_FACE_KEY_FILE=/etc/dwc/face.key
+Environment=DWC_FACE_CONCURRENCY=2
+# Model weights live in $HOME/.deepface/weights. IPAddressDeny below blocks the
+# first-run download, so pre-populate that directory during provisioning.
+Environment=HOME=/var/lib/dwc-face
+StateDirectory=dwc-face
+ExecStart=/opt/dwc/face-service/.venv/bin/python main.py
+Restart=on-failure
+# Hardening: no writes outside the weights cache, no external listening.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dwc-face
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=4G
+
+[Install]
+WantedBy=multi-user.target

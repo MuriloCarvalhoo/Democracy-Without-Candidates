@@ -33,6 +33,16 @@ check: doctor
 test:
     cargo test --features ssr
 
+# Create face-service/.venv with the HTTP layer and pytest (no TensorFlow).
+face-setup:
+    python3 -m venv face-service/.venv
+    face-service/.venv/bin/pip install -q -r face-service/requirements-dev.txt
+
+# Face service tests with the deterministic fake engine (no TensorFlow needed).
+face-test:
+    @test -x face-service/.venv/bin/python || { echo "missing face-service/.venv: run just face-setup"; exit 1; }
+    cd face-service && DWC_FACE_ENGINE=fake DWC_FACE_TEST_MODE=1 .venv/bin/python -m pytest
+
 # Browser regressions: isolated app + chromedriver, bounded waits.
 e2e: doctor
     @command -v ${CHROMEDRIVER:-chromedriver} >/dev/null || { echo "missing: chromedriver matching the installed Chrome"; exit 1; }

@@ -42,6 +42,16 @@ impl FaceVerifier {
         matches!(self, Self::Synthetic)
     }
 
+    /// Whether a match also proves a live person. Currently always `false`: no
+    /// engine validates liveness server-side, so callers must not treat a match
+    /// as liveness evidence.
+    pub fn liveness_validated(&self) -> bool {
+        match self {
+            Self::Synthetic => false,
+            Self::Service(client) => client.liveness_validated(),
+        }
+    }
+
     pub async fn enroll(&self, sample: FaceSample<'_>) -> Result<FaceTemplate, AppError> {
         match self {
             Self::Synthetic => synthetic::enroll(sample),

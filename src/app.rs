@@ -6,7 +6,12 @@ use leptos_router::{
 };
 
 use crate::{
-    features::{home::HomePage, shell::Layout},
+    features::{
+        audit::{AuditAdvancedPage, AuditPublicPage},
+        home::HomePage,
+        notifications::{NotificationPreferencesPage, NotificationsPage},
+        shell::Layout,
+    },
     i18n::t,
 };
 
@@ -41,6 +46,10 @@ pub fn App() -> impl IntoView {
             <Layout>
                 <Routes fallback=NotFound>
                     <Route path=path!("") view=HomePage/>
+                    <Route path=path!("/auditoria") view=AuditPublicPage/>
+                    <Route path=path!("/auditoria/avancada") view=AuditAdvancedPage/>
+                    <Route path=path!("/notificacoes") view=NotificationsPage/>
+                    <Route path=path!("/perfil/notificacoes") view=NotificationPreferencesPage/>
                 </Routes>
             </Layout>
         </Router>

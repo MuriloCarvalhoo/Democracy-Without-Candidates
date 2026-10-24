@@ -4,7 +4,11 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::AppError, i18n::t};
+use crate::{
+    error::AppError,
+    features::notifications::{NotificationsBadge, provide_notifications_refresh},
+    i18n::t,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Viewer {
@@ -67,6 +71,7 @@ pub type InstanceResource = Resource<Result<Instance, AppError>>;
 pub fn Layout(children: Children) -> impl IntoView {
     let info: InstanceResource = Resource::new(|| (), |_| instance_info());
     provide_context(info);
+    provide_notifications_refresh();
     let online = RwSignal::new(true);
     // Effects only run in the browser: marks the page as hydrated for tests/E2E.
     let hydrated = RwSignal::new(false);
@@ -83,6 +88,8 @@ pub fn Layout(children: Children) -> impl IntoView {
             <A href="/" attr:class="brand">{t("app.name")}</A>
             <nav aria-label=t("nav.main")>
                 <A href="/">{t("nav.home")}</A>
+                <A href="/auditoria">{t("nav.audit")}</A>
+                <NotificationsBadge/>
             </nav>
         </header>
         <Transition fallback=|| ()>

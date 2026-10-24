@@ -38,7 +38,7 @@ e2e: doctor
     @command -v ${CHROMEDRIVER:-chromedriver} >/dev/null || { echo "missing: chromedriver matching the installed Chrome"; exit 1; }
     cargo leptos build
     mkdir -p target/e2e && cp target/debug/dwc target/e2e/dwc
-    DWC_E2E_BIN=target/e2e/dwc cargo test --features ssr --test e2e -- --ignored --test-threads=2
+    DWC_E2E_BIN=target/e2e/dwc cargo test --features ssr --test 'e2e*' -- --ignored --test-threads=2
 
 # Release build used by load tests and deployment.
 release:

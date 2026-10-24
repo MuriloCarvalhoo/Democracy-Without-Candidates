@@ -22,6 +22,7 @@ macro_rules! migration {
 pub const MIGRATIONS: &[Migration] = &[
     migration!("0001_foundation"),
     migration!("0002_identity_core"),
+    migration!("0450_audit_notifications"),
 ];
 
 #[derive(Debug, thiserror::Error)]

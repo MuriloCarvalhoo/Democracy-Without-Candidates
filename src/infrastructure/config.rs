@@ -48,6 +48,9 @@ pub struct Config {
     pub identity_provider: IdentityProviderKind,
     pub face_service_url: Option<String>,
     pub secret_key_file: Option<PathBuf>,
+    /// Ed25519 key for audit checkpoints. Required in production; dev/test default
+    /// to `audit-signing.key` next to the database (generated on first use).
+    pub audit_signing_key_file: PathBuf,
     pub session_idle_secs: i64,
     pub session_absolute_secs: i64,
     pub secure_cookies: bool,
@@ -136,6 +139,12 @@ impl Config {
             return Err(ConfigError::Missing("DWC_SECRET_KEY_FILE"));
         }
 
+        let audit_signing_key_file = match get("DWC_AUDIT_SIGNING_KEY_FILE") {
+            Some(path) if !path.trim().is_empty() => PathBuf::from(path),
+            _ if production => return Err(ConfigError::Missing("DWC_AUDIT_SIGNING_KEY_FILE")),
+            _ => db_path.with_file_name("audit-signing.key"),
+        };
+
         let parse_secs = |key: &'static str, default: i64| -> Result<i64, ConfigError> {
             match get(key) {
                 None => Ok(default),
@@ -158,6 +167,7 @@ impl Config {
             identity_provider,
             face_service_url,
             secret_key_file,
+            audit_signing_key_file,
             session_idle_secs: parse_secs("DWC_SESSION_IDLE_SECS", 15 * 60)?,
             session_absolute_secs: parse_secs("DWC_SESSION_ABSOLUTE_SECS", 8 * 60 * 60)?,
             secure_cookies: production,
@@ -207,6 +217,33 @@ mod tests {
         assert_eq!(c.session_idle_secs, 900);
         assert_eq!(c.session_cookie_name(), "dwc_session");
         assert_eq!(c.public_origin, "http://127.0.0.1:3000");
+        assert_eq!(
+            c.audit_signing_key_file,
+            PathBuf::from("data/audit-signing.key")
+        );
+    }
+
+    #[test]
+    fn production_requires_audit_signing_key() {
+        let base = [
+            ("DWC_ENV", "production"),
+            ("DWC_DB_PATH", "/var/lib/dwc/br.db"),
+            ("DWC_COUNTRY", "BR"),
+            ("DWC_PUBLIC_ORIGIN", "https://br.example.invalid"),
+            ("DWC_SECRET_KEY_FILE", "/etc/dwc/key"),
+            ("DWC_IDENTITY_PROVIDER", "face-service"),
+            ("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"),
+        ];
+        assert!(matches!(
+            cfg(&base),
+            Err(ConfigError::Missing("DWC_AUDIT_SIGNING_KEY_FILE"))
+        ));
+        let mut with_key = base.to_vec();
+        with_key.push(("DWC_AUDIT_SIGNING_KEY_FILE", "/etc/dwc/audit.key"));
+        assert_eq!(
+            cfg(&with_key).unwrap().audit_signing_key_file,
+            PathBuf::from("/etc/dwc/audit.key")
+        );
     }
 
     #[test]
@@ -248,6 +285,7 @@ mod tests {
             ("DWC_SECRET_KEY_FILE", "/etc/dwc/key"),
             ("DWC_IDENTITY_PROVIDER", "face-service"),
             ("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"),
+            ("DWC_AUDIT_SIGNING_KEY_FILE", "/etc/dwc/audit.key"),
         ];
         let c = cfg(&base).unwrap();
         assert_eq!(c.session_cookie_name(), "__Host-dwc_session");

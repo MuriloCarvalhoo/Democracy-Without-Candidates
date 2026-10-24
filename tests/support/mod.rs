@@ -100,7 +100,82 @@ impl App {
     }
 }
 
+/// Runs `dwc seed-dev` (synthetic fixtures) against a database before starting the app.
+pub fn seed_dev(db_path: &Path) {
+    let status = app_command(db_path, free_port(), &[])
+        .arg("seed-dev")
+        .stdout(Stdio::null())
+        .status()
+        .expect("run seed-dev");
+    assert!(status.success(), "seed-dev failed: {status}");
+}
+
+/// Plain HTTP GET returning (status, body) for non-browser checks (downloads).
+pub fn http_get(port: u16, path: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).expect("read response");
+    let status = raw
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body = raw
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b.to_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
+/// Plain HTTP POST with extra headers, returning (status, body).
+pub fn http_post(port: u16, path: &str, headers: &[(&str, &str)], body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let extra: String = headers
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}\r\n"))
+        .collect();
+    write!(
+        stream,
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nContent-Length: {}\r\n{extra}\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).expect("read response");
+    let status = raw
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body = raw
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b.to_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
 fn spawn_app(db_path: &Path, port: u16, env: &[(String, String)]) -> Child {
+    let mut child = app_command(db_path, port, env).spawn().expect("spawn app");
+    // Fail fast if the process exits during startup (bad config, port in use).
+    std::thread::sleep(Duration::from_millis(50));
+    if let Ok(Some(status)) = child.try_wait() {
+        panic!("app exited during startup: {status}");
+    }
+    child
+}
+
+fn app_command(db_path: &Path, port: u16, env: &[(String, String)]) -> Command {
     let bin = std::env::var("DWC_E2E_BIN").unwrap_or_else(|_| "target/e2e/dwc".into());
     assert!(
         Path::new(&bin).exists(),
@@ -122,14 +197,7 @@ fn spawn_app(db_path: &Path, port: u16, env: &[(String, String)]) -> Child {
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let child = cmd.spawn().expect("spawn app");
-    let mut child = child;
-    // Fail fast if the process exits during startup (bad config, port in use).
-    std::thread::sleep(Duration::from_millis(50));
-    if let Ok(Some(status)) = child.try_wait() {
-        panic!("app exited during startup: {status}");
-    }
-    child
+    cmd
 }
 
 impl Drop for App {

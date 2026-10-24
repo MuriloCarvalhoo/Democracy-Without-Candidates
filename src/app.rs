@@ -6,7 +6,14 @@ use leptos_router::{
 };
 
 use crate::{
-    features::{home::HomePage, shell::Layout},
+    features::{
+        home::HomePage,
+        proposals::{
+            DashboardPage, EditProposalPage, NewProposalPage, ProposalPage, ProposalsPage,
+            SetupHistoryPage, SignersPage,
+        },
+        shell::Layout,
+    },
     i18n::t,
 };
 
@@ -41,6 +48,13 @@ pub fn App() -> impl IntoView {
             <Layout>
                 <Routes fallback=NotFound>
                     <Route path=path!("") view=HomePage/>
+                    <Route path=path!("/propostas") view=ProposalsPage/>
+                    <Route path=path!("/propostas/nova") view=NewProposalPage/>
+                    <Route path=path!("/propostas/:id") view=ProposalPage/>
+                    <Route path=path!("/propostas/:id/editar") view=EditProposalPage/>
+                    <Route path=path!("/propostas/:id/assinantes") view=SignersPage/>
+                    <Route path=path!("/dashboard") view=DashboardPage/>
+                    <Route path=path!("/setup/historico") view=SetupHistoryPage/>
                 </Routes>
             </Layout>
         </Router>

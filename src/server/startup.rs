@@ -90,6 +90,12 @@ async fn serve(
         clock: Arc::new(SystemClock),
         face,
     };
+    // Deadline transitions resume from persisted instants after any restart.
+    tokio::spawn(crate::application::phases::run_ticker(
+        state.db.clone(),
+        state.clock.clone(),
+        Duration::from_secs(30),
+    ));
     let app = router(state, leptos_options);
 
     let listener = tokio::net::TcpListener::bind(&addr)

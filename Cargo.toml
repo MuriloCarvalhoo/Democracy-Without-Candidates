@@ -18,7 +18,7 @@ serde_json = "1"
 thiserror = "2"
 console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen = { version = "=0.2.129", optional = true }
-web-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", features = ["Window", "Crypto"], optional = true }
 
 # Server-only dependencies
 axum = { version = "0.8.9", optional = true }
@@ -28,6 +28,7 @@ tower = { version = "0.5", optional = true }
 tower-http = { version = "0.6", features = ["limit"], optional = true }
 turso = { version = "0.8.3", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"], optional = true }
+chrono-tz = { version = "0.10.4", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
 rand = { version = "0.9", optional = true }
 sha2 = { version = "0.10", optional = true }
@@ -38,6 +39,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 [dev-dependencies]
 tempfile = "3"
 fantoccini = { version = "0.22.1", default-features = false, features = ["rustls-tls"] }
+proptest = "1.11"
 
 [features]
 hydrate = [
@@ -54,6 +56,7 @@ ssr = [
     "dep:tower-http",
     "dep:turso",
     "dep:chrono",
+    "dep:chrono-tz",
     "dep:uuid",
     "dep:rand",
     "dep:sha2",
@@ -90,4 +93,8 @@ lib-profile-release = "wasm-release"
 
 [[test]]
 name = "e2e"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_proposals"
 required-features = ["ssr"]

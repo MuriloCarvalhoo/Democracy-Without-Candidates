@@ -55,3 +55,9 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--border); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (min-width: 48rem) { .page h1 { font-size: 2rem; } }
+.spread { justify-content: space-between; }
+.filters { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.proposal-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.deadlines { padding-left: 1.25rem; }
+code { overflow-wrap: anywhere; }
+fieldset { border: 1px solid var(--border); border-radius: .25rem; display: grid; gap: .5rem; }

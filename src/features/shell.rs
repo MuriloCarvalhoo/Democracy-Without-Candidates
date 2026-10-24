@@ -83,6 +83,9 @@ pub fn Layout(children: Children) -> impl IntoView {
             <A href="/" attr:class="brand">{t("app.name")}</A>
             <nav aria-label=t("nav.main")>
                 <A href="/">{t("nav.home")}</A>
+                <A href="/propostas">{t("nav.proposals")}</A>
+                <A href="/dashboard">{t("nav.dashboard")}</A>
+                <A href="/setup/historico">{t("nav.setup_history")}</A>
             </nav>
         </header>
         <Transition fallback=|| ()>

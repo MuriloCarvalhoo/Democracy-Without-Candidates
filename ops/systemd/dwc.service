@@ -1,0 +1,34 @@
+# Application instance of one country. Example: adjust paths, never commit secrets.
+# Layout: /opt/dwc/releases/<versão>/{dwc,hash.txt,site/,catalog/,ops/}, /opt/dwc/current -> release.
+[Unit]
+Description=Democracia Sem Candidatos (<país>)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dwc
+Group=dwc
+WorkingDirectory=/opt/dwc/current
+EnvironmentFile=/etc/dwc/dwc.env
+ExecStart=/opt/dwc/current/dwc serve
+Restart=on-failure
+RestartSec=5
+# SIGTERM: stop accepting, drain in-flight requests (app limit 30 s), then exit.
+KillSignal=SIGTERM
+TimeoutStopSec=35
+StateDirectory=dwc
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/dwc
+
+[Install]
+WantedBy=multi-user.target

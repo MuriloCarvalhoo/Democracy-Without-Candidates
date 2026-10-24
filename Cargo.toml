@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.96"
 license = "MIT"
 publish = false
+# Separate packages with their own workspace/lockfile (e.g. tools/load).
+exclude = ["tools/"]
+
+# Standalone workspace: never join a parent manifest; tools/load has its own.
+[workspace]
+exclude = ["tools/load"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -23,6 +29,8 @@ web-sys = { version = "0.3", optional = true, features = [
     "Crypto",
     "Location",
     "Navigator",
+    "ServiceWorkerContainer",
+    "Storage",
     "MediaDevices",
     "MediaStream",
     "MediaStreamTrack",
@@ -118,6 +126,8 @@ site-root = "target/site"
 site-pkg-dir = "pkg"
 style-file = "style/main.css"
 assets-dir = "public"
+# Content-hashed pkg file names (requires hash.txt next to the server binary).
+hash-files = true
 site-addr = "127.0.0.1:3000"
 reload-port = 3001
 browserquery = "defaults"
@@ -142,4 +152,12 @@ required-features = ["ssr"]
 
 [[test]]
 name = "e2e_proposals"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_admin"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_pwa"
 required-features = ["ssr"]

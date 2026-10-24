@@ -5,7 +5,8 @@ use leptos::prelude::*;
 
 use crate::{error::AppError, features::ui::action_error, i18n::t};
 
-#[server]
+// Stable endpoints: used by the load test harness (tools/load).
+#[server(endpoint = "get_counter")]
 pub async fn get_counter() -> Result<i64, AppError> {
     use crate::{infrastructure::db::query_opt, server::context};
     let state = context::state()?;
@@ -22,7 +23,7 @@ pub async fn get_counter() -> Result<i64, AppError> {
     })
 }
 
-#[server]
+#[server(endpoint = "increment_counter")]
 pub async fn increment_counter() -> Result<i64, AppError> {
     use crate::{
         infrastructure::{clock::ts, db::query_opt},

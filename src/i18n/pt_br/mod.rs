@@ -1,5 +1,6 @@
 //! pt-BR catalog split by feature to keep parallel work conflict-free.
 
+mod admin;
 mod audit;
 mod auth;
 mod common;
@@ -14,4 +15,5 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         .or_else(|| auth::lookup(key))
         .or_else(|| profile::lookup(key))
         .or_else(|| proposals::lookup(key))
+        .or_else(|| admin::lookup(key))
 }

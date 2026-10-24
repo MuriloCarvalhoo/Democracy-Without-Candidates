@@ -141,6 +141,19 @@ pub mod testing {
         policy: SessionPolicy,
         municipality_code: &str,
     ) -> (String, String) {
+        account_with_session(db, now, policy, municipality_code, "active", &["CITIZEN"]).await
+    }
+
+    /// Like `citizen_with_session` with explicit status (`pending`/`active`/`blocked`)
+    /// and roles (`CITIZEN`, `AUDITOR`, `COUNTRY_ADMIN`). Test-only.
+    pub async fn account_with_session(
+        db: &Db,
+        now: DateTime<Utc>,
+        policy: SessionPolicy,
+        municipality_code: &str,
+        status: &str,
+        roles: &[&str],
+    ) -> (String, String) {
         let user_id = new_id();
         let tx = db.write().await.unwrap();
         let row = query_opt(
@@ -158,17 +171,19 @@ pub mod testing {
         );
         tx.execute(
             "INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, synthetic, created_at, updated_at)
-             VALUES (?1, ?2, 'Cidadã Sintética', 'x', 'active', ?3, ?4, ?5, 1, ?6, ?6)",
-            (user_id.as_str(), format!("{user_id}@example.test"), m, s, c, ts(now)),
+             VALUES (?1, ?2, 'Cidadã Sintética', 'x', ?7, ?3, ?4, ?5, 1, ?6, ?6)",
+            (user_id.as_str(), format!("{user_id}@example.test"), m, s, c, ts(now), status),
         )
         .await
         .unwrap();
-        tx.execute(
-            "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, 'CITIZEN', ?2)",
-            (user_id.as_str(), ts(now)),
-        )
-        .await
-        .unwrap();
+        for role in roles {
+            tx.execute(
+                "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, ?2, ?3)",
+                (user_id.as_str(), *role, ts(now)),
+            )
+            .await
+            .unwrap();
+        }
         let token = create(&tx, now, policy, &user_id).await.unwrap();
         tx.commit().await.unwrap();
         (user_id, token)

@@ -53,6 +53,10 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--border); }
+.table-scroll { overflow-x: auto; }
+.facts { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: .25rem 1rem; margin: 0; }
+.facts dt { font-weight: 600; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (min-width: 48rem) { .page h1 { font-size: 2rem; } }
 .table-scroll { overflow-x: auto; }

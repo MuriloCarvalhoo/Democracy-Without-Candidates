@@ -1,0 +1,24 @@
+# Online backup: asks the running instance for an engine snapshot (SIGUSR1), verifies
+# it with `dwc check-db`, encrypts with age (public recipients only) and applies
+# retention (7 daily / 4 weekly). Copy /var/backups/dwc to separate storage afterwards.
+[Unit]
+Description=Backup da instância Democracia Sem Candidatos
+Requires=dwc.service
+After=dwc.service
+
+[Service]
+Type=oneshot
+User=dwc
+Group=dwc
+WorkingDirectory=/opt/dwc/current
+EnvironmentFile=/etc/dwc/dwc.env
+Environment=DWC_BIN=/opt/dwc/current/dwc
+Environment=DWC_BACKUP_DIR=/var/backups/dwc
+Environment=DWC_BACKUP_RECIPIENTS=/etc/dwc/backup-recipients.txt
+ExecStart=/bin/sh -c 'exec /opt/dwc/current/ops/backup.sh --online "$(systemctl show -p MainPID --value dwc.service)"'
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/dwc /var/backups/dwc

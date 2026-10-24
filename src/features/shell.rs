@@ -113,8 +113,14 @@ pub fn Layout(children: Children) -> impl IntoView {
                         }.into_any(),
                     })}
                 </Transition>
+                <Transition fallback=|| ()>
+                    {move || info.get().and_then(|r| r.ok()).and_then(|i| i.viewer).filter(|v| v.is_admin).map(|_| view! {
+                        <A href="/admin">{t("nav.admin")}</A>
+                    })}
+                </Transition>
             </nav>
         </header>
+        <crate::features::pwa::PwaRegistration/>
         <Transition fallback=|| ()>
             {move || info.get().and_then(|r| r.ok()).filter(|i| i.synthetic).map(|_| view! {
                 <p class="banner" role="note">{t("app.synthetic_banner")}</p>

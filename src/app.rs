@@ -14,6 +14,10 @@ use crate::{
         login::{LoginPage, ResetPasswordPage},
         notifications::{NotificationPreferencesPage, NotificationsPage},
         profile::{PrivacyPage, ProfilePage},
+        proposals::{
+            DashboardPage, EditProposalPage, NewProposalPage, ProposalPage, ProposalsPage,
+            SetupHistoryPage, SignersPage,
+        },
         register::RegisterPage,
         shell::Layout,
     },
@@ -63,6 +67,13 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/perfil/privacidade") view=PrivacyPage/>
                     <Route path=path!("/perfil/codigos") view=RecoveryCodesPage/>
                     <Route path=path!("/alterar-senha") view=ChangePasswordPage/>
+                    <Route path=path!("/propostas") view=ProposalsPage/>
+                    <Route path=path!("/propostas/nova") view=NewProposalPage/>
+                    <Route path=path!("/propostas/:id") view=ProposalPage/>
+                    <Route path=path!("/propostas/:id/editar") view=EditProposalPage/>
+                    <Route path=path!("/propostas/:id/assinantes") view=SignersPage/>
+                    <Route path=path!("/dashboard") view=DashboardPage/>
+                    <Route path=path!("/setup/historico") view=SetupHistoryPage/>
                 </Routes>
             </Layout>
         </Router>

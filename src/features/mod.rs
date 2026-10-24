@@ -9,6 +9,7 @@ pub mod home;
 pub mod login;
 pub mod notifications;
 pub mod profile;
+pub mod proposals;
 pub mod reauth;
 pub mod register;
 pub mod shell;

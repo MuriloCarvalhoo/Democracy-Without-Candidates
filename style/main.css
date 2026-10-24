@@ -65,3 +65,8 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
 dt { font-weight: 600; } dd { margin: 0; }
 video { width: 100%; max-width: 24rem; border-radius: .5rem; }
+.spread { justify-content: space-between; }
+.filters { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.proposal-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.deadlines { padding-left: 1.25rem; }
+fieldset { border: 1px solid var(--border); border-radius: .25rem; display: grid; gap: .5rem; }

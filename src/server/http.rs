@@ -20,6 +20,10 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
     let ctx_state = state.clone();
     Router::new()
         .route("/healthz", get(health))
+        .route(
+            "/propostas/{id}/exportar",
+            get(crate::features::proposals::api::export_handler),
+        )
         .leptos_routes_with_context(
             &leptos_options,
             routes,

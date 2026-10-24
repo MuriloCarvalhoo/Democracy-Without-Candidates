@@ -55,4 +55,22 @@ impl AppState {
             policy: self.session_policy(),
         }
     }
+
+    /// Instance timezone from the country configuration (civil year, display).
+    pub fn tz(&self) -> chrono_tz::Tz {
+        self.config
+            .country
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::UTC)
+    }
+
+    pub fn proposal_ctx(&self) -> crate::application::proposals::Ctx<'_> {
+        crate::application::proposals::Ctx {
+            db: &self.db,
+            flags: &self.flags,
+            now: self.now(),
+            tz: self.tz(),
+        }
+    }
 }

@@ -11,3 +11,4 @@
 !.env.example
 /face-service/.venv
 __pycache__/
+*.dev-secret.key

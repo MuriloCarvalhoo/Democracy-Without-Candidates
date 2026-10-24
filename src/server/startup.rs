@@ -5,8 +5,9 @@ use std::{sync::Arc, time::Duration};
 
 use leptos::prelude::get_configuration;
 
-use super::{AppState, http::router};
+use super::{AppState, IdentityServices, http::router};
 use crate::infrastructure::{
+    address::AddressProvider,
     catalog,
     clock::SystemClock,
     config::{Config, IdentityProviderKind},
@@ -15,6 +16,7 @@ use crate::infrastructure::{
     face_service::FaceServiceClient,
     flags::Flags,
     migrations,
+    secrets::SecretBox,
 };
 
 /// `dwc` serves; `dwc seed-dev` writes synthetic fixtures (non-production only).
@@ -83,12 +85,21 @@ async fn serve(
         }
         _ => FaceVerifier::Synthetic,
     };
+    let address = AddressProvider::select(&flags, &config);
+    if address.is_none() {
+        tracing::warn!("no compatible address provider enabled; registration unavailable");
+    }
+    let identity = IdentityServices {
+        secrets: SecretBox::load(&config)?,
+        address,
+    };
     let state = AppState {
         db,
         config: Arc::new(config),
         flags: Arc::new(flags),
         clock: Arc::new(SystemClock),
         face,
+        identity: Arc::new(identity),
     };
     let app = router(state, leptos_options);
 
@@ -100,11 +111,15 @@ async fn serve(
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service())
-            .with_graceful_shutdown(async {
-                let _ = stop_rx.await;
-            })
-            .await
+        // Peer address feeds the per-IP authentication limit.
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async {
+            let _ = stop_rx.await;
+        })
+        .await
     });
     shutdown_signal().await;
     tracing::info!("shutdown requested; draining in-flight requests (max 30 s)");

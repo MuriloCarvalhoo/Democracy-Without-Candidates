@@ -65,15 +65,66 @@ pub async fn require_actor() -> Result<Actor, AppError> {
 /// (browser-session cookie). Secure + `__Host-` prefix in production.
 pub fn set_session_cookie(token: &str) {
     let Ok(state) = state() else { return };
+    append_cookie(
+        &state,
+        state.config.session_cookie_name(),
+        token,
+        "SameSite=Lax",
+    );
+}
+
+pub fn clear_session_cookie() {
+    let Ok(state) = state() else { return };
+    append_cookie(
+        &state,
+        state.config.session_cookie_name(),
+        "",
+        "SameSite=Lax; Max-Age=0",
+    );
+}
+
+fn auth_cookie_name(state: &AppState) -> &'static str {
+    if state.config.secure_cookies {
+        "__Host-dwc_auth"
+    } else {
+        "dwc_auth"
+    }
+}
+
+/// Short-lived cookie carrying the state of a multi-step login/reset (5 minutes).
+pub fn set_auth_cookie(token: &str) {
+    let Ok(state) = state() else { return };
+    append_cookie(
+        &state,
+        auth_cookie_name(&state),
+        token,
+        "SameSite=Strict; Max-Age=300",
+    );
+}
+
+pub fn clear_auth_cookie() {
+    let Ok(state) = state() else { return };
+    append_cookie(
+        &state,
+        auth_cookie_name(&state),
+        "",
+        "SameSite=Strict; Max-Age=0",
+    );
+}
+
+pub async fn auth_token() -> Result<Option<String>, AppError> {
+    let state = state()?;
+    let headers: HeaderMap = extract().await.map_err(|_| AppError::Internal)?;
+    Ok(cookie_value(&headers, auth_cookie_name(&state)))
+}
+
+fn append_cookie(state: &AppState, name: &str, value: &str, attrs: &str) {
     let secure = if state.config.secure_cookies {
         "; Secure"
     } else {
         ""
     };
-    let cookie = format!(
-        "{}={token}; HttpOnly; SameSite=Lax; Path=/{secure}",
-        state.config.session_cookie_name()
-    );
+    let cookie = format!("{name}={value}; HttpOnly; Path=/; {attrs}{secure}");
     if let (Some(response), Ok(value)) = (
         use_context::<ResponseOptions>(),
         HeaderValue::from_str(&cookie),
@@ -82,23 +133,12 @@ pub fn set_session_cookie(token: &str) {
     }
 }
 
-pub fn clear_session_cookie() {
-    let Ok(state) = state() else { return };
-    let secure = if state.config.secure_cookies {
-        "; Secure"
-    } else {
-        ""
-    };
-    let cookie = format!(
-        "{}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure}",
-        state.config.session_cookie_name()
-    );
-    if let (Some(response), Ok(value)) = (
-        use_context::<ResponseOptions>(),
-        HeaderValue::from_str(&cookie),
-    ) {
-        response.append_header(header::SET_COOKIE, value);
-    }
+/// Socket peer address (see `application::identity::ratelimit` for proxy limits).
+pub async fn client_ip() -> Option<std::net::IpAddr> {
+    extract::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .await
+        .ok()
+        .map(|c| c.0.ip())
 }
 
 #[cfg(test)]

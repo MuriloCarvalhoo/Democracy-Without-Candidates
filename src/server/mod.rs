@@ -4,11 +4,17 @@ pub mod context;
 pub mod http;
 pub mod startup;
 
+#[cfg(test)]
+mod identity_network_tests;
+
 use std::sync::Arc;
 
 use crate::{
-    application::session::SessionPolicy,
-    infrastructure::{clock::Clock, config::Config, db::Db, face::FaceVerifier, flags::Flags},
+    application::{identity::Deps, session::SessionPolicy},
+    infrastructure::{
+        address::AddressProvider, clock::Clock, config::Config, db::Db, face::FaceVerifier,
+        flags::Flags, secrets::SecretBox,
+    },
 };
 
 /// Process-wide state provided to every SSR render and server function.
@@ -19,6 +25,13 @@ pub struct AppState {
     pub flags: Arc<Flags>,
     pub clock: Arc<dyn Clock>,
     pub face: FaceVerifier,
+    pub identity: Arc<IdentityServices>,
+}
+
+/// Identity infrastructure: secret encryption and the flag-selected address provider.
+pub struct IdentityServices {
+    pub secrets: SecretBox,
+    pub address: Option<AddressProvider>,
 }
 
 impl AppState {
@@ -31,5 +44,15 @@ impl AppState {
 
     pub fn now(&self) -> chrono::DateTime<chrono::Utc> {
         self.clock.now()
+    }
+
+    pub fn identity_deps(&self) -> Deps<'_> {
+        Deps {
+            db: &self.db,
+            now: self.now(),
+            face: &self.face,
+            secrets: &self.identity.secrets,
+            policy: self.session_policy(),
+        }
     }
 }

@@ -77,12 +77,32 @@ pub fn Layout(children: Children) -> impl IntoView {
         let _ = window_event_listener(leptos::ev::online, move |_| online.set(true));
     }
 
+    let sign_out = move |_| {
+        leptos::task::spawn_local(async move {
+            let _ = crate::features::login::logout().await;
+            crate::features::ui::hard_navigate("/");
+        });
+    };
+
     view! {
         <a class="skip" href="#conteudo">"Pular para o conteúdo"</a>
         <header class="site-header">
             <A href="/" attr:class="brand">{t("app.name")}</A>
             <nav aria-label=t("nav.main")>
                 <A href="/">{t("nav.home")}</A>
+                <Transition fallback=|| ()>
+                    {move || info.get().map(|r| match r.ok().and_then(|i| i.viewer) {
+                        None => view! {
+                            <A href="/login" attr:data-testid="nav-login">{t("nav.login")}</A>
+                            <A href="/cadastro" attr:data-testid="nav-register">{t("nav.register")}</A>
+                        }.into_any(),
+                        Some(v) => view! {
+                            {v.pending.then(|| view! { <A href="/cadastro/biometria">{t("nav.finish")}</A> })}
+                            <A href="/perfil" attr:data-testid="nav-profile">{t("nav.profile")}</A>
+                            <button type="button" class="link" data-testid="nav-logout" on:click=sign_out>{t("nav.logout")}</button>
+                        }.into_any(),
+                    })}
+                </Transition>
             </nav>
         </header>
         <Transition fallback=|| ()>

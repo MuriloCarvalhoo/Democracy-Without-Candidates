@@ -55,3 +55,11 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--border); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (min-width: 48rem) { .page h1 { font-size: 2rem; } }
+/* Identity */
+.hidden { display: none; }
+button.link { background: none; border: none; color: var(--accent); padding: 0; min-height: auto; text-decoration: underline; }
+.qr svg { width: 200px; height: auto; background: #fff; }
+.codes code { font-size: 1rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
+dt { font-weight: 600; } dd { margin: 0; }
+video { width: 100%; max-width: 24rem; border-radius: .5rem; }

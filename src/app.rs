@@ -6,7 +6,15 @@ use leptos_router::{
 };
 
 use crate::{
-    features::{home::HomePage, shell::Layout},
+    features::{
+        account::{ChangePasswordPage, RecoveryCodesPage},
+        enroll::EnrollPage,
+        home::HomePage,
+        login::{LoginPage, ResetPasswordPage},
+        profile::{PrivacyPage, ProfilePage},
+        register::RegisterPage,
+        shell::Layout,
+    },
     i18n::t,
 };
 
@@ -41,6 +49,14 @@ pub fn App() -> impl IntoView {
             <Layout>
                 <Routes fallback=NotFound>
                     <Route path=path!("") view=HomePage/>
+                    <Route path=path!("/login") view=LoginPage/>
+                    <Route path=path!("/recuperar-senha") view=ResetPasswordPage/>
+                    <Route path=path!("/cadastro") view=RegisterPage/>
+                    <Route path=path!("/cadastro/biometria") view=EnrollPage/>
+                    <Route path=path!("/perfil") view=ProfilePage/>
+                    <Route path=path!("/perfil/privacidade") view=PrivacyPage/>
+                    <Route path=path!("/perfil/codigos") view=RecoveryCodesPage/>
+                    <Route path=path!("/alterar-senha") view=ChangePasswordPage/>
                 </Routes>
             </Layout>
         </Router>

@@ -2,6 +2,7 @@
 
 pub mod actor;
 pub mod audit;
+pub mod identity;
 pub mod notify;
 pub mod reauth;
 pub mod session;

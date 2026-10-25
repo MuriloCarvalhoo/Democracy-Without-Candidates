@@ -1,6 +1,6 @@
 # Decisões e plano de desenvolvimento SDD
 
-Atualizado em 2026-10-12. **Arquitetura e fluxo aprovados; aplicação não implementada.** O escopo atual é documentação. Executar a fundação, instalar ferramentas ou criar código exige solicitação de implementação.
+Atualizado em 2026-10-25. **Arquitetura e fluxo aprovados; implementação demonstrativa com dados sintéticos na branch `feat/implementation`.** O usuário solicitou a implementação em 2026-10-24 e delegou as decisões restantes; elas estão em [Implementação: decisões para revisão](#implementação-decisões-para-revisão).
 
 ## Registro de decisões
 
@@ -20,7 +20,7 @@ Atualizado em 2026-10-12. **Arquitetura e fluxo aprovados; aplicação não impl
 | Uso | Exclusivamente online, sem votação ou coleta de assinaturas em meio físico | PWA instalável não implica funcionamento offline |
 | SDD | Especificações Markdown enxutas inspiradas no OpenSpec, sem CLI obrigatório | Uma feature ou mudança por vez, com requisitos, tarefas e evidência |
 | Instruções de agentes | Um AGENTS.md curto na raiz | Arquivos locais somente para exceções reais |
-| Harness de validação | Justfile fino com comandos locais e de CI | Contratos na [fundação](../architecture/foundation-setup.md#contratos-futuros-dos-comandos); ainda não implementados |
+| Harness de validação | Justfile fino com comandos locais e de CI | Comandos e evidência na [fundação](../architecture/foundation-setup.md#comandos) |
 | Navegador | Chrome DevTools MCP para inspeção; Fantoccini/WebDriver para regressões Rust | Interação real após hidratação e testes reproduzíveis |
 | Carga | Cenários Goose em Rust contra builds release | Smoke limitado na fundação; campanha final após aceitação funcional |
 
@@ -95,7 +95,7 @@ Exemplo: duas submissões concorrentes de um eleitor sintético elegível não p
 
 O AGENTS.md mantém stack, fronteiras, fluxo e requisitos de verificação, incluindo navegação por CodeGraph. Acrescentar instruções por diretório somente para uma exceção real.
 
-O harness é o ambiente e os comandos reproduzíveis de build, inicialização e verificação; não é um serviço de produção. Usar `just` como executor fino, com a [interface única de comandos](../architecture/foundation-setup.md#contratos-futuros-dos-comandos) local e em CI. Dependências ausentes devem causar falha explícita, sem substituir o banco ou pular o navegador. Fixar toolchain Rust e lockfile; configuração de infraestrutura e código gerado para o navegador não alteram a decisão por lógica Rust.
+O harness é o ambiente e os comandos reproduzíveis de build, inicialização e verificação; não é um serviço de produção. Usar `just` como executor fino, com a [interface única de comandos](../architecture/foundation-setup.md#comandos) local e em CI. Dependências ausentes devem causar falha explícita, sem substituir o banco ou pular o navegador. Fixar toolchain Rust e lockfile; configuração de infraestrutura e código gerado para o navegador não alteram a decisão por lógica Rust.
 
 Cada execução usa banco descartável e fixtures sintéticas próprios. Aguardar readiness por health check com timeout, sem sleep fixo. Encerrar somente processos criados pela execução. Artefatos não devem conter segredos ou dados pessoais reais.
 
@@ -127,15 +127,56 @@ Registrar carga oferecida, throughput, p50/p95/p99, erros, CPU/RAM, disco, confl
 
 Usar release. Sondagens iniciais de 10, 50 e 100 usuários simulados são experimentos, não promessa de capacidade. Avaliar saturação do gerador; antes de afirmar capacidade da implantação, repetir em VPS equivalente com gerador separado.
 
-## Ordem de implementação futura
+## Estado da implementação
 
-1. **Fundação:** scaffold Leptos/Axum/TursoDB, health check, migrations, harness/CI, um E2E e smoke de carga. Estimativa: 2–4 horas com dependências compatíveis; 4–8 horas se a integração exigir diagnóstico.
-2. **Identidade e setup:** sessões, RBAC, provider sintético, bootstrap e bloqueio de leis antes da adoção. Integração real requer decisões do PRD.
-3. **Propostas:** rascunhos, publicação, assinaturas, debate e transições persistidas com prazo.
-4. **Votação e auditoria:** resolver protocolo/regras, aceitação e fechamento, recibos e verificação de resultados. Sem estimativa confiável para desenho e validação de segurança.
-5. **Aceitação:** release, regressões de navegador, restauração e campanha final de carga. Campanha base estimada em 1–2 horas com cenários/fixtures prontos; correções são adicionais.
+Implementado em 2026-10-24/25 por fatias paralelas, integradas e verificadas juntas (evidência na [fundação](../architecture/foundation-setup.md#estado-da-evidência)). Tudo opera com identidades sintéticas; nada aqui autoriza uso eleitoral real.
 
-A fundação só termina quando seus [critérios e checklist](../architecture/foundation-setup.md#requisitos-e-critérios-observáveis), incluindo CI e smoke, tiverem evidência. Isso não demonstra prontidão biométrica, eleitoral ou operacional do produto. Nenhuma tarefa de implementação foi executada.
+| Área | Estado | Limite principal |
+| --- | --- | --- |
+| Fundação | SSR/WASM, TursoDB, migrations com checksum, catálogo IBGE, flags, health, CSRF por Origin, Justfile, CI configurado | CI ainda não executado no GitHub |
+| Identidade e sessão | Cadastro com BrasilAPI e território por IBGE/cidade+UF, Argon2id, rosto (sintético ou motor Python), TOTP, códigos de recuperação, recuperação de senha, reautenticação, sessões persistidas, perfil/privacidade | Biometria real, vivacidade e unicidade de pessoa não validadas |
+| Motor facial | Serviço Python privado (Flask/waitress, loopback, chave compartilhada, imagens só em memória) e cliente Rust | Matching não calibrado; vivacidade inexistente no servidor |
+| Setup e propostas | Setup versionado com herança, rascunho, publicação com quota e reautenticação, assinaturas com limiar transacional, prazos com ticker e retomada após restart, exportação | Regras eleitorais são propostas do agente |
+| Debate | Comentários encadeados, edição com histórico, emendas como sugestões, denúncias, moderação auditada, bloqueio | Sem moderação de emendas |
+| Votação | Voto público demonstrativo com consentimento, uma cédula por conta, reautenticação, idempotência, encerramento transacional, resultado, plebiscito inicial, meta-leis, estatísticas | **Sem voto secreto e sem recibo**; `voting.private` não pode ser ligada |
+| Auditoria e notificações | Cadeia de hash append-only, log público, auditoria avançada registrada, checkpoints Ed25519, notificações in-app com preferências e lembretes | E-mail não entregue; checkpoint exige serviço parado |
+| Admin e operação | Painel de flags com "pendente de reinício", auditores, moderação, `grant-admin`, backup online/offline cifrado com `age`, `check-db`, systemd/Caddy de exemplo, PWA só com assets | VPS, RTO e proxy não executados de verdade |
+
+## Implementação: decisões para revisão
+
+**Status: escolhas do agente durante a implementação, aguardando revisão do usuário.** Complementam as [decisões delegadas](#decisões-delegadas-para-revisão) sem alterá-las.
+
+| Área | Decisão tomada |
+| --- | --- |
+| Persistência | Uma única conexão de escrita serializada (`BEGIN IMMEDIATE`): o motor retorna Busy com dois escritores. O processo servidor trava o arquivo, então comandos de operador rodam com o serviço parado, exceto snapshot online por SIGUSR1 com `VACUUM INTO` |
+| Território e endereço | Endereço e território imutáveis também por triggers. Catálogo IBGE versionado em `catalog/br/jurisdictions.csv`, importado por checksum na inicialização |
+| Autorização | Papéis em `user_roles`; mapa papel→permissão no código. CSRF por verificação de `Origin`/`Sec-Fetch-Site` em métodos mutáveis, somado a SameSite=Lax. Cookie de desenvolvimento sem Secure (`dwc_session`), produção `__Host-dwc_session` |
+| Cadastro e login | Conta pendente sem rosto entra só com senha para concluir a biometria, sem permissões de cidadão. E-mail duplicado recebe mensagem genérica, diferente do sucesso (sem confirmação de e-mail a enumeração não é totalmente evitável). Recuperação com e-mail inexistente simula o fluxo. Ativação troca a sessão |
+| Limites de autenticação | 5 falhas/15 min por conta e 30 por IP; endereços loopback ignorados até haver proxy confiável; contadores guardam hash de e-mail/IP |
+| Segredos | XChaCha20-Poly1305 para template facial e segredo TOTP (chave `DWC_SECRET_KEY_FILE`; em dev, gerada ao lado do banco com 0600). Reenrolar TOTP mantém os códigos restantes. Auditoria da reautenticação não registra o recurso, para não ligar a reautenticação a uma cédula |
+| Motor facial | Limiar de distância de cosseno 0,30 (equivale ao 0,70 herdado), não calibrado. `/healthz` também exige a chave. Template = 512 floats sem byte de versão. O desafio é só ecoado; uso único é controlado no Rust |
+| Propostas | Maioria em pontos-base (5000 = SIM>NÃO; 6000 = >60% dos válidos). Herança do setup mais próximo (município → estado → nação). Leis exigem setup já no rascunho; meta-lei sem quota. Retirar assinatura não exige reautenticação. Debate que termina com eleitorado vazio arquiva a proposta. Listagem padrão oculta arquivadas. Hash do texto = SHA-256 de `título\n\nresumo\n\ntexto` |
+| Debate | Comentários da coleta ao fim da votação; emendas só na coleta e no debate. Profundidade 3. Bloqueio impede comentários, edições e emendas. Histórico de edição visível só ao autor e moderadores. Limites: 10 escritas/10 min, 5 emendas/24 h, 2000 caracteres. Notificação de debate sempre entregue, sem categoria desligável |
+| Votação | Sem parciais antes do encerramento. Votos públicos não são listados nominalmente; a interface mostra agregados. `setup:vote` para plebiscito e meta-lei, `proposal:vote` para leis. `voting_opened` vai para a jurisdição (sem fan-out na transação). Percentuais exibidos em pontos-base com arredondamento meio-para-cima; a decisão usa inteiros exatos. Iniciar plebiscito não exige reautenticação |
+| Estatísticas | Célula mínima de 10; o total também é ocultado quando as células ocultas somam entre 1 e 9 |
+| Auditoria | Verificação incremental em memória, completa a cada 10 min e na inicialização. Acesso de auditor é evento restrito. `append` recusa chaves sensíveis no payload. Datas exibidas em UTC na auditoria |
+| Notificações | Tabela genérica de agendamento por usuário ou jurisdição; sem outbox de e-mail porque não há remetente nem política de retry |
+| Operação | Backup cifrado com `age` (só chave pública na VPS). `grant-admin` exige serviço parado. Auditor exige conta ativa; ações de admin sem reautenticação. Caddy como proxy de exemplo. PWA registra o service worker só em produção |
+| Rotas | `/setup` e `/setup/historico` em vez de `/setup/:paisId` (uma instância por país) |
+
+### Dúvidas para revisão do usuário
+
+1. **Identidade:** limites 5/conta e 30/IP estão bons? Conta pendente entrar só com senha para concluir a biometria é aceitável? Reenrolar TOTP deve gerar novos códigos? Admin e auditor sintéticos devem ter também o papel CITIZEN?
+2. **Motor facial:** produção deve recusar `face-service` enquanto a vivacidade não for validada? Incluir versão do modelo no template? Enxugar dependências e fixar hashes?
+3. **Propostas:** retirar assinatura deve exigir rosto + TOTP? Meta-lei deve consumir quota? Município herda o setup estadual ou só o nacional?
+4. **Debate:** notificações de debate devem ser desligáveis? Histórico de edição público? Moderar emendas? Os limites servem?
+5. **Votação:** votos públicos devem ser listados nominalmente após o encerramento? A contagem de participação na auditoria durante a votação é aceitável? Iniciar plebiscito deve exigir reautenticação?
+6. **Auditoria:** como gerar checkpoints sem parar o serviço (tarefa periódica, painel ou CLI)? Acesso de auditor deve ser público e anônimo? A chave de assinatura deve ficar fora da VPS? Interface em UTC ou America/Sao_Paulo?
+7. **Operação:** camada horária de backup para o RPO de 1 h (ex.: 24 horários)? Credenciar auditor deve exigir reautenticação? Caddy ou nginx?
+
+### Bloqueios que permanecem
+
+Os [bloqueadores de validação](#bloqueadores-de-validação-que-decisões-não-eliminam) continuam válidos: voto secreto, recibo, prova de pessoa única, vivacidade, entrega de e-mail, VPS/domínio/backup reais e revisão de privacidade/acessibilidade não foram resolvidos pela implementação.
 
 ## Referências
 

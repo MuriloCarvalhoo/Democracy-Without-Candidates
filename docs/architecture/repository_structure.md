@@ -1,52 +1,51 @@
 # Estrutura do repositório
 
-Atualizado em 2026-10-12. Arquitetura aprovada; estrutura de aplicação ainda não implementada. O registro das decisões fica no [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-25. Arquitetura aprovada e implementada como um pacote Cargo de aplicação. O registro das decisões fica no [plano SDD](../development/sdd-plan.md).
 
 ## Estado e organização documental
 
-O checkout contém README, LICENSE, AGENTS.md e documentos de produto, arquitetura e desenvolvimento. Não há `Cargo.toml`, `src/`, migrations, Justfile, CI ou harness de testes. A presença de um plano ou de um índice CodeGraph não significa que exista aplicação executável.
+O checkout contém a aplicação Rust, o motor facial Python, testes, ferramentas de carga, exemplos de operação e a documentação abaixo.
 
 | Documento existente | Responsabilidade |
 | --- | --- |
 | [README](../../README.md) | Entrada, estado real e navegação |
 | [PRD](../prd/prd.md) | Produto, critérios R01–R29, requisitos não funcionais e decisões pendentes |
 | [Plano SDD](../development/sdd-plan.md) | Decisões de arquitetura, fluxo e estratégia de validação |
-| [Fundação](foundation-setup.md) | Requisitos, contratos de comandos, tarefas e evidência da primeira entrega |
+| [Fundação](foundation-setup.md) | Requisitos, comandos, checklist e evidência |
 | [Servidor](backend-architecture.md) | Processo, camadas e casos de uso |
 | [Interface](frontend-architecture.md) | Leptos, hidratação e experiência web |
 | [Banco](database-structure.md) | Modelo conceitual e invariantes de persistência |
 | [Identidade e autorização](auth-rbac-flow.md) | Sessão, permissões e critérios AUTH |
 | [Wireframes](../wireframes/wireframes.md) | Fluxos e estados de tela |
 | [AGENTS.md](../../AGENTS.md) | Instruções para trabalho no repositório |
+| [Operação](../../ops/README.md) | Implantação, backup e restauração |
+| [Motor facial](../../face-service/README.md) | Serviço Python privado e seus limites |
 
 Atualizar esses documentos em vez de criar relatórios de análise ou repetir decisões em novos arquivos. A primeira especificação e checklist estão no guia de fundação. Novos artefatos de feature só devem surgir quando necessários ao trabalho solicitado.
 
-## Estrutura futura mínima
-
-A árvore abaixo é uma proposta de organização, não um inventário de arquivos existentes. Criar módulos conforme as fatias executadas; não gerar todas as features vazias antecipadamente.
+## Estrutura atual
 
 ```text
-Cargo.toml                 # um pacote de aplicação
-Cargo.lock
-rust-toolchain.toml
-Justfile                   # interface fina de comandos
+Cargo.toml / Cargo.lock    # um pacote de aplicação (features ssr e hydrate)
+rust-toolchain.toml        # Rust 1.96.0 + wasm32
+Justfile                   # interface única de comandos
 src/
-  domain/                  # regras, tipos e transições
-  application/             # casos de uso, autorização e transações
-  infrastructure/          # TursoDB, configuração e provedores
-  features/                # telas e server functions por funcionalidade
-  app.rs                   # composição Leptos e rotas
-  lib.rs                   # pontos compartilhados por SSR/hydrate
-  main.rs                  # inicialização do servidor
-migrations/                # mudanças versionadas do banco
-style/                     # CSS
-public/                    # assets públicos
-tests/                    # integração e E2E em Rust
-tools/load/               # pacote Goose isolado do build WASM
-artifacts/                # evidências geradas e ignoradas pelo Git
+  domain/                  # regras puras: identidade, propostas, setup, votação, debate, auditoria
+  application/             # casos de uso, autorização, transações (servidor)
+  infrastructure/          # TursoDB, migrations, config, flags, catálogo, segredos, provedores
+  features/                # telas Leptos e server functions por funcionalidade
+  server/                  # estado, contexto da requisição, HTTP, startup e CLI de operador
+  i18n/pt_br/              # textos por funcionalidade
+  app.rs, lib.rs, main.rs  # rotas, hidratação e entrada do binário
+migrations/                # SQL versionado com checksum
+catalog/br/                # catálogo territorial IBGE versionado
+style/, public/            # CSS, manifest, service worker e página offline
+tests/                     # E2E Fantoccini (e2e*.rs) e harness em tests/support
+face-service/              # motor facial Python privado (exceção aprovada)
+tools/load/                # Goose em pacote separado
+ops/                       # systemd, Caddy, backup e restauração
+artifacts/                 # evidências geradas, ignoradas pelo Git
 ```
-
-Arquivos exatos de inicialização serão ajustados ao scaffold validado. O motor facial Python é um serviço interno na mesma VPS; o processo Rust continua sendo o único proprietário do banco da aplicação. Um pacote de carga separado não implica múltiplos serviços de produção.
 
 ## Dependências e fronteiras
 
@@ -68,7 +67,7 @@ No Brasil, o modelo prevê jurisdições nacional, estadual e municipal; outros 
 
 ## Evolução e entrega
 
-Começar com a fundação mínima. Acrescentar identidade de teste, sessão/RBAC e setup antes do fluxo de leis; depois propostas, assinaturas e debate. Votação real e auditoria exigem resolver protocolo e regras eleitorais. Notificações, estatísticas, PWA e operação crescem conforme seus critérios.
+As fatias da fundação, identidade, setup, propostas, debate, votação demonstrativa, auditoria, notificações e operação estão implementadas com dados sintéticos. Votação real e voto secreto exigem protocolo e validação.
 
 Não adicionar crates de domínio, filas, Redis, Kubernetes ou microsserviços sem necessidade demonstrada.
 

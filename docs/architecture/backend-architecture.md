@@ -1,6 +1,6 @@
 # Arquitetura do servidor
 
-Atualizado em 2026-10-12. Stack aprovada: Rust, Leptos SSR, Axum/Tokio e TursoDB local. Não há servidor implementado. As decisões estão no [plano SDD](../development/sdd-plan.md) e o produto no [PRD](../prd/prd.md).
+Atualizado em 2026-10-25. Stack aprovada e implementada: Rust, Leptos SSR, Axum/Tokio e TursoDB local; estado por área no [SDD](../development/sdd-plan.md#estado-da-implementação). As decisões estão no [plano SDD](../development/sdd-plan.md) e o produto no [PRD](../prd/prd.md).
 
 ## Processo e interfaces
 

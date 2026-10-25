@@ -23,6 +23,11 @@ jobs:
         id: chrome
         with:
           install-chromedriver: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: just face-setup
+      - run: just face-test
       - run: just check
       - run: just test
       - name: E2E

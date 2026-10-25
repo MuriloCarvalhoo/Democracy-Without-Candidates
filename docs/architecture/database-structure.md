@@ -1,6 +1,18 @@
 # Persistência e modelo de dados
 
-Atualizado em 2026-10-12. Banco aprovado: TursoDB local pela crate Rust `turso`. Não há schema executável, migrations ou banco da aplicação. Este é um modelo conceitual a detalhar por feature; ver [PRD](../prd/prd.md) e [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-25. Banco aprovado: TursoDB local pela crate Rust `turso` 0.8.3. O schema executável está em `migrations/` e é aplicado na inicialização com checksum; este guia mantém o modelo conceitual e as restrições. Ver [PRD](../prd/prd.md) e [plano SDD](../development/sdd-plan.md).
+
+| Migration | Conteúdo |
+| --- | --- |
+| `0001_foundation` | Flags, catálogo territorial, cadeia de auditoria append-only, contador sintético |
+| `0002_identity_core` | Contas, papéis, endereço imutável, sessões, reautenticação, notificações |
+| `0100_identity` | Credenciais cifradas, desafios, códigos de recuperação, limites, preferências |
+| `0200_setup_proposals` | Setup versionado, snapshots de eleitorado, propostas, assinaturas, idempotência |
+| `0300_debate` | Comentários, revisões, denúncias, moderação, bloqueios, emendas |
+| `0400_voting` | Cédulas públicas demonstrativas e resultados imutáveis |
+| `0450_audit_notifications` | Checkpoints, preferências e agendamento de notificações |
+
+Verificado no motor real: CHECK, UNIQUE, FK, triggers, RETURNING, ON CONFLICT, `VACUUM INTO` e `PRAGMA integrity_check`. Dois escritores simultâneos retornam Busy; triggers com cadeias longas de `OR` estouram a pilha em debug.
 
 ## País, processo e armazenamento
 
@@ -14,7 +26,7 @@ Dados de produção, desenvolvimento e teste usam caminhos separados. Testes cri
 
 Entidade conceitual `feature_flags`: chave de funcionalidade e estado habilitado/desabilitado, próprios do banco da instância. As flags são lidas na inicialização; mudanças no banco ficam pendentes de reinício da aplicação. Proposta: painel local do Admin País, com autoria/data auditadas e indicação de reinício pendente, conforme o SDD. O catálogo de chaves é definido pela aplicação; uma chave arbitrária no banco não cria funcionalidade nem permissão. Alterações devem ter autoria/data auditáveis, conforme o [contrato do servidor](backend-architecture.md#feature-flags-por-instância).
 
-Não há schema ou flags implementadas. A modelagem física e migrations serão verificadas com TursoDB real quando essa feature for executada.
+Flags implementadas em `src/infrastructure/flags.rs`; `voting.private` nunca pode ser ligada nesta versão.
 
 ## Convenções e decisões físicas pendentes
 
@@ -128,4 +140,4 @@ As [bases provisórias do SDD](../development/sdd-plan.md#decisões-delegadas-pa
 
 Fundação: migration e dado sintético mínimo para persistência/restart. Depois identidade/sessão/RBAC e setup; propostas/assinaturas/debate; votação/recibos/resultados após resolver protocolo; notificações e consultas conforme features.
 
-Nenhuma entidade ou constraint deste guia está implementada. Evidência inicial fica na [checklist da fundação](foundation-setup.md), sem novo relatório de análise. Validar com TursoDB real; testes mock não comprovam atomicidade, migração ou persistência.
+As entidades de identidade, setup, propostas, debate, votação pública demonstrativa, auditoria e notificações estão implementadas e testadas com TursoDB real (evidência na [fundação](foundation-setup.md#estado-da-evidência)). Voto privado, recibos e proteção em repouso do arquivo do banco continuam pendentes.

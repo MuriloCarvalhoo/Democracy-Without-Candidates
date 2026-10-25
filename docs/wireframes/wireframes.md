@@ -2,7 +2,7 @@
 
 ## Finalidade
 
-Atualizado em 2026-10-12. Esboços textuais do produto futuro, alinhados à arquitetura Rust/Leptos do [PRD](../prd/prd.md). Nenhuma tela foi implementada ou validada em navegador. Este documento descreve:
+Atualizado em 2026-10-25. Esboços textuais alinhados à arquitetura Rust/Leptos do [PRD](../prd/prd.md). As telas foram implementadas com dados sintéticos; acessibilidade e leitores de tela ainda não foram auditados. Este documento descreve:
 
 - Fluxos completos de usuário
 - Estados de tela (carregamento, erro, vazio)

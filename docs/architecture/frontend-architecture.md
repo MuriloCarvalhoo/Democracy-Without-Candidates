@@ -1,6 +1,6 @@
 # Arquitetura da interface web
 
-Atualizado em 2026-10-12. Interface aprovada: Leptos em Rust, SSR e hidratação WASM. Ainda não há telas executáveis. Ver [PRD](../prd/prd.md), [wireframes](../wireframes/wireframes.md) e [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-25. Interface implementada com Leptos em Rust, SSR e hidratação WASM, em pt-BR, com regressões Fantoccini em `tests/e2e*.rs`. Ver [PRD](../prd/prd.md), [wireframes](../wireframes/wireframes.md) e [plano SDD](../development/sdd-plan.md).
 
 ## Renderização e estado
 

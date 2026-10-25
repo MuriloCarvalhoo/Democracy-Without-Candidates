@@ -1,6 +1,6 @@
 # Identidade, sessão e autorização
 
-Atualizado em 2026-10-12. Desenho para Rust/Leptos/Axum; nenhuma autenticação ou integração biométrica implementada. Requisitos no [PRD](../prd/prd.md), decisões e bloqueadores no [plano SDD](../development/sdd-plan.md).
+Atualizado em 2026-10-25. Implementado em Rust/Leptos/Axum com provider facial sintético e cliente do motor Python; biometria real não validada. Requisitos no [PRD](../prd/prd.md), decisões e bloqueadores no [plano SDD](../development/sdd-plan.md).
 
 ## Limites do desenho
 
@@ -90,27 +90,27 @@ Mensagens devem permitir corrigir credenciais, sessão expirada e reautenticaç�
 
 ## Critérios de aceitação pendentes
 
-Os IDs AUTH01–AUTH14 são estáveis. A coluna PRD relaciona critérios aos [requisitos do produto](../prd/prd.md#12-critérios-de-aceite); um critério isolado não encerra esses requisitos. Todos aguardam implementação e evidência.
+Os IDs AUTH01–AUTH14 são estáveis. A coluna PRD relaciona critérios aos [requisitos do produto](../prd/prd.md#12-critérios-de-aceite); um critério isolado não encerra esses requisitos. Testes com identidade sintética não comprovam biometria real nem unicidade de pessoa.
 
-| ID | Critério futuro e evidência necessária | PRD relacionado |
-| --- | --- | --- |
-| AUTH01 | Cadastro exige e-mail, senha, nome e endereço; campos obrigatórios ausentes/inválidos ou falhas do provider não ativam a conta | R02, R28, R29 |
-| AUTH02 | Cadastro inicia em PENDING_CITIZEN e não permite ações eleitorais | R02, R03 |
-| AUTH03 | Ativação não exige confirmação de e-mail, mas exige as demais verificações aprovadas; falhas não ativam CITIZEN e teste sintético não valida provider real | R02, R03 |
-| AUTH04 | Login usa e-mail + senha, rosto e TOTP, ou código válido no fluxo de recuperação de TOTP; falha em senha/rosto ou segundo fator sem recuperação válida não estabelece sessão | R02, R19 |
-| AUTH05 | Sessão persiste no TursoDB e mantém expiração/revogação após reinício, com cookie opaco HttpOnly/Secure em produção e isolado por host; payloads públicos não contêm dados sensíveis; não há manter conectado ou persistência de login entre usos; expiração por 15 minutos de inatividade, revogação e reabertura/restauração do navegador são testadas | R19, RNF10 |
-| AUTH06 | RBAC nega chamadas de rede protegidas sem autorização | R03, R19 |
-| AUTH07 | Permissão considera o território derivado do endereço cadastrado, autoria e condições do recurso; endereço não pode ser alterado após cadastro | R03, R13, R19, R28 |
-| AUTH08 | Ação crítica rejeita reautenticação ausente, inválida, expirada ou para outra ação | R09, R11, R19 |
-| AUTH09 | Voto exige identidade/elegibilidade e face + 2FA conforme provider/protocolo aprovados | R02, R05, R11 |
-| AUTH10 | Assinatura exige reautenticação prevista e não aceita duplicidade | R09, R19 |
-| AUTH11 | Criar proposta exige reautenticação, setup e limites aplicáveis | R06, R14, R19 |
-| AUTH12 | Eventos relevantes são auditáveis sem expor segredos ou comprometer voto privado | R20, R21, RNF10 |
-| AUTH13 | Recuperação de TOTP usa código de uso único, mantendo senha/rosto; hashes protegidos, consumo atômico e rejeição de código inválido/usado ou replay concorrente são verificados | R02, R19 |
-| AUTH14 | Recuperação de senha exige rosto + TOTP, sem envio de e-mail; falha não altera o hash, sucesso permite redefinir senha e não libera alteração de endereço/território | R02, R19, R28 |
+| ID | Critério e evidência necessária | PRD relacionado | Estado em 2026-10-25 |
+| --- | --- | --- | --- |
+| AUTH01 | Cadastro exige e-mail, senha, nome e endereço; campos obrigatórios ausentes/inválidos ou falhas do provider não ativam a conta | R02, R28, R29 | Implementado e testado (provider sintético) |
+| AUTH02 | Cadastro inicia em PENDING_CITIZEN e não permite ações eleitorais | R02, R03 | Implementado e testado |
+| AUTH03 | Ativação não exige confirmação de e-mail, mas exige as demais verificações aprovadas; falhas não ativam CITIZEN e teste sintético não valida provider real | R02, R03 | Sintético testado; provider real não validado |
+| AUTH04 | Login usa e-mail + senha, rosto e TOTP, ou código válido no fluxo de recuperação de TOTP; falha em senha/rosto ou segundo fator sem recuperação válida não estabelece sessão | R02, R19 | Implementado; E2E de login completo |
+| AUTH05 | Sessão persiste no TursoDB e mantém expiração/revogação após reinício, com cookie opaco HttpOnly/Secure em produção e isolado por host; payloads públicos não contêm dados sensíveis; não há manter conectado ou persistência de login entre usos; expiração por 15 minutos de inatividade, revogação e reabertura/restauração do navegador são testadas | R19, RNF10 | Persistência, expiração e revogação testadas; fechamento/restauração do navegador não testados |
+| AUTH06 | RBAC nega chamadas de rede protegidas sem autorização | R03, R19 | Testado pela rede |
+| AUTH07 | Permissão considera o território derivado do endereço cadastrado, autoria e condições do recurso; endereço não pode ser alterado após cadastro | R03, R13, R19, R28 | Testado, incluindo rejeição de alteração de endereço |
+| AUTH08 | Ação crítica rejeita reautenticação ausente, inválida, expirada ou para outra ação | R09, R11, R19 | Testado |
+| AUTH09 | Voto exige identidade/elegibilidade e face + 2FA conforme provider/protocolo aprovados | R02, R05, R11 | Parcial: voto público demonstrativo com identidade sintética |
+| AUTH10 | Assinatura exige reautenticação prevista e não aceita duplicidade | R09, R19 | Testado, incluindo concorrência no limiar |
+| AUTH11 | Criar proposta exige reautenticação, setup e limites aplicáveis | R06, R14, R19 | Testado |
+| AUTH12 | Eventos relevantes são auditáveis sem expor segredos ou comprometer voto privado | R20, R21, RNF10 | Eventos implementados sem segredos; verificação externa pendente |
+| AUTH13 | Recuperação de TOTP usa código de uso único, mantendo senha/rosto; hashes protegidos, consumo atômico e rejeição de código inválido/usado ou replay concorrente são verificados | R02, R19 | Testado, incluindo consumo concorrente |
+| AUTH14 | Recuperação de senha exige rosto + TOTP, sem envio de e-mail; falha não altera o hash, sucesso permite redefinir senha e não libera alteração de endereço/território | R02, R19, R28 | Testado |
 
 ## Sequência e validação
 
 Após a fundação, implementar identidade sintética, sessão e políticas RBAC testáveis. Especificar e implementar bootstrap/setup e bloqueios antes das leis. Integrar o motor escolhido e recuperação real somente após corrigir/validar os fatores; ações de voto privado aguardam o protocolo.
 
-Executar testes Rust, chamadas de rede não autorizadas, cenários de expiração/replay e navegador real. Testar explicitamente que configuração de produção rejeita mock. Ainda não há evidência de nenhum desses critérios.
+Testes Rust, chamadas de rede não autorizadas, expiração/replay e E2E em navegador real estão em `src/application/identity/`, `src/server/identity_network_tests.rs` e `tests/e2e_identity.rs`; a configuração de produção rejeita o provider sintético (`src/infrastructure/config.rs`).

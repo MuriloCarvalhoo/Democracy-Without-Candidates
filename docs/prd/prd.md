@@ -1,9 +1,9 @@
 # Democracy Without Candidates
 ## Product Requirements Document (PRD)
 
-> **Versão:** 1.3.0 | **Atualização:** 2026-10-12 | **Status:** Especificação; aplicação não implementada
+> **Versão:** 1.4.0 | **Atualização:** 2026-10-25 | **Status:** Implementação demonstrativa com dados sintéticos; sem validade eleitoral
 
-Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). Os critérios abaixo são requisitos futuros, sem evidência de implementação. As [decisões pendentes](#13-decisões-de-produto-pendentes) precisam ser resolvidas antes das features afetadas.
+Arquitetura aprovada no [plano SDD](../development/sdd-plan.md). O estado de cada critério está na [seção 12](#12-critérios-de-aceite). As [decisões pendentes](#13-decisões-de-produto-pendentes) precisam ser resolvidas antes das features afetadas.
 
 ---
 
@@ -318,7 +318,7 @@ R18/R19 abrangem leitura pública e operações autenticadas pela interface inic
 
 ## 11. Mapa de Telas (31 Telas)
 
-Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção entre países são escopo futuro a revisar. Critérios de recuperação constam no guia de identidade e nas propostas do SDD, ainda sem implementação; PIN não é credencial aprovada.
+Telas implementadas, exceto a gestão global de países. Desvios: setup em `/setup` e `/setup/historico` e estatísticas em `/estatisticas` (uma instância por país); assinatura feita na página da proposta, sem `/assinar`; exportação como download em `/propostas/:id/exportar`. Rotas de gestão global e seleção entre países são escopo futuro a revisar. Critérios de recuperação constam no guia de identidade e nas propostas do SDD, ainda sem implementação; PIN não é credencial aprovada.
 
 | Módulo | Tela | Rota | Acesso |
 |--------|------|------|--------|
@@ -358,39 +358,39 @@ Mapa pretendido, não telas implementadas. Rotas de gestão global e seleção e
 
 ## 12. Critérios de Aceite
 
-Todos estão pendentes, sem testes executados. Os IDs R01–R29 são estáveis. R03/R15 preservam a administração global como expansão futura, sem torná-la requisito da instância inicial. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
+Os IDs R01–R29 são estáveis. Estado baseado na evidência registrada na [fundação](../architecture/foundation-setup.md#estado-da-evidência); "implementado" com identidades sintéticas não significa pronto para uso eleitoral. R03/R15 preservam a administração global como expansão futura, sem torná-la requisito da instância inicial. Detalhar casos positivos/negativos e evidência por feature antes de implementar.
 
-| ID | Critério |
-|----|---------|
-| R01 | Sistema acessível via WEB (PWA) com disponibilidade em tempo real |
-| R02 | Prova de identidade com face + 2FA e prevenção de duplicidade demonstradas; mock não satisfaz provider real |
-| R03 | RBAC com os papéis da instância e políticas aprovadas; Admin Master depende da definição da expansão global |
-| R04 | Perfil público e privado configurável pelo cidadão |
-| R05 | Voto privado e público com protocolo/garantias validados, incluindo unicidade entre modos e verificação do recibo |
-| R06 | Plebiscito de configuração inicial — nenhuma lei criada antes do setup |
-| R07 | Parâmetros do setup só alteráveis via meta-lei com quórum/maioria especiais |
-| R08 | Fluxo completo de proposta com todos os 9 status |
-| R09 | Coleta de assinaturas com contador em tempo real e validação biométrica |
-| R10 | Período de debate com comentários, emendas e moderação |
-| R11 | Período de votação com reautenticação biométrica obrigatória |
-| R12 | Encerramento/apuração aplicam fórmulas e versões aprovadas, com casos de empate/abstenção/concorrência testados |
-| R13 | Isolamento entre países e políticas territoriais verificadas; leitura pública e participação entre níveis dependem das regras aprovadas na seção 13 |
-| R14 | Limite de propostas por cidadão por ano funcional e bloqueante |
-| R15 | Dashboard funcional para cidadão e visitante; dashboard do Admin Master depende da definição da expansão global |
-| R16 | Sistema de notificações in-app e e-mail funcional |
-| R17 | Preferências de notificação configuráveis por cidadão |
-| R18 | Interface pública de listagem e resultados funcional; contrato externo separado somente quando definido |
-| R19 | Server functions autenticadas de criação, assinatura e voto aplicam autorização e invariantes no servidor |
-| R20 | Eventos críticos têm integridade verificável conforme modelo de ameaça e mecanismo aprovados |
-| R21 | Auditores independentes verificam integridade sem acessar votos privados |
-| R22 | Backup diário auditável e restauração testada, conforme retenção e RPO/RTO aprovados |
-| R23 | Conformidade com WCAG 2.1 AA |
-| R24 | Suporte a múltiplos idiomas (i18n) |
-| R25 | Ambiente local/CI reproduzível compila SSR/WASM e executa os checks definidos, sem resetar dados persistentes |
-| R26 | Frontend instalável como PWA no celular e desktop, sem modo offline ou fila local de ações eleitorais |
-| R27 | Flags persistidas por instância são carregadas na inicialização; alteração no banco mantém o estado efetivo anterior até reinício, quando o novo estado controla servidor e interface; chamadas diretas de funcionalidades desativadas são rejeitadas, sem remover dados ou contornar autorização/regras do domínio |
-| R28 | Cadastro exige e-mail, senha, nome e endereço; território é derivado do endereço no servidor. Após gravação inicial, tentativas de alterar endereço ou vínculo territorial são rejeitadas e os dados originais permanecem intactos |
-| R29 | CEP brasileiro consulta BrasilAPI pelo provedor habilitado em feature flag e preenche o endereço. Persistência mantém nomes/estrutura do retorno; falhas, flags conflitantes, dados adulterados e resposta de CEP antigo não produzem cadastro com território incorreto |
+| ID | Critério | Estado em 2026-10-25 |
+|----|---------|--------|
+| R01 | Sistema acessível via WEB (PWA) com disponibilidade em tempo real | Parcial: web online e PWA; disponibilidade não medida |
+| R02 | Prova de identidade com face + 2FA e prevenção de duplicidade demonstradas; mock não satisfaz provider real | Não atendido: só provider sintético |
+| R03 | RBAC com os papéis da instância e políticas aprovadas; Admin Master depende da definição da expansão global | Parcial: papéis da instância; Admin Master futuro |
+| R04 | Perfil público e privado configurável pelo cidadão | Implementado |
+| R05 | Voto privado e público com protocolo/garantias validados, incluindo unicidade entre modos e verificação do recibo | Não atendido: só voto público demonstrativo |
+| R06 | Plebiscito de configuração inicial — nenhuma lei criada antes do setup | Implementado e testado |
+| R07 | Parâmetros do setup só alteráveis via meta-lei com quórum/maioria especiais | Implementado e testado |
+| R08 | Fluxo completo de proposta com todos os 9 status | Implementado |
+| R09 | Coleta de assinaturas com contador em tempo real e validação biométrica | Implementado; contador atualiza após ação, sem push |
+| R10 | Período de debate com comentários, emendas e moderação | Implementado |
+| R11 | Período de votação com reautenticação biométrica obrigatória | Implementado com reautenticação sintética |
+| R12 | Encerramento/apuração aplicam fórmulas e versões aprovadas, com casos de empate/abstenção/concorrência testados | Implementado com regras propostas; empate/abstenção/concorrência testados |
+| R13 | Isolamento entre países e políticas territoriais verificadas; leitura pública e participação entre níveis dependem das regras aprovadas na seção 13 | Parcial: território testado; regras em revisão |
+| R14 | Limite de propostas por cidadão por ano funcional e bloqueante | Implementado e testado |
+| R15 | Dashboard funcional para cidadão e visitante; dashboard do Admin Master depende da definição da expansão global | Implementado para cidadão e visitante |
+| R16 | Sistema de notificações in-app e e-mail funcional | Parcial: in-app; e-mail não entregue |
+| R17 | Preferências de notificação configuráveis por cidadão | Implementado (in-app) |
+| R18 | Interface pública de listagem e resultados funcional; contrato externo separado somente quando definido | Implementado |
+| R19 | Server functions autenticadas de criação, assinatura e voto aplicam autorização e invariantes no servidor | Implementado e testado pela rede |
+| R20 | Eventos críticos têm integridade verificável conforme modelo de ameaça e mecanismo aprovados | Parcial: cadeia e checkpoints; modelo de ameaça pendente |
+| R21 | Auditores independentes verificam integridade sem acessar votos privados | Parcial: verificação local; checkpoints externos dependem do operador |
+| R22 | Backup diário auditável e restauração testada, conforme retenção e RPO/RTO aprovados | Parcial: backup/restauração testados localmente; VPS não |
+| R23 | Conformidade com WCAG 2.1 AA | Não verificado |
+| R24 | Suporte a múltiplos idiomas (i18n) | Parcial: estrutura i18n, só pt-BR |
+| R25 | Ambiente local/CI reproduzível compila SSR/WASM e executa os checks definidos, sem resetar dados persistentes | Atendido localmente; CI não executado no GitHub |
+| R26 | Frontend instalável como PWA no celular e desktop, sem modo offline ou fila local de ações eleitorais | Implementado; instalação em dispositivo não verificada |
+| R27 | Flags persistidas por instância são carregadas na inicialização; alteração no banco mantém o estado efetivo anterior até reinício, quando o novo estado controla servidor e interface; chamadas diretas de funcionalidades desativadas são rejeitadas, sem remover dados ou contornar autorização/regras do domínio | Implementado e testado (E2E com reinício) |
+| R28 | Cadastro exige e-mail, senha, nome e endereço; território é derivado do endereço no servidor. Após gravação inicial, tentativas de alterar endereço ou vínculo territorial são rejeitadas e os dados originais permanecem intactos | Implementado e testado |
+| R29 | CEP brasileiro consulta BrasilAPI pelo provedor habilitado em feature flag e preenche o endereço. Persistência mantém nomes/estrutura do retorno; falhas, flags conflitantes, dados adulterados e resposta de CEP antigo não produzem cadastro com território incorreto | Implementado e testado com BrasilAPI simulada |
 
 ---
 
@@ -413,4 +413,4 @@ O usuário delegou as escolhas restantes e revisará depois. Todas as bases abai
 
 As bases provisórias permitem preparar a especificação sem novas perguntas nesta entrega. A fundação sintética continua possível; dados/provedores/protocolo real, recuperação operacional e revisão de privacidade continuam bloqueadores de produção descritos no SDD. Não alegar execução, conformidade ou garantia eleitoral por decisão documental. A ordem de trabalho está no [plano SDD](../development/sdd-plan.md); requisitos e tarefas da primeira fatia estão no [guia de fundação](../architecture/foundation-setup.md).
 
-*Democracy Without Candidates — PRD v1.3.0 — 2026-10-12*
+*Democracy Without Candidates — PRD v1.4.0 — 2026-10-25*

@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod audit;
 pub mod debate;
+pub mod iam;
 pub mod identity;
 pub mod notification;
 pub mod proposals;

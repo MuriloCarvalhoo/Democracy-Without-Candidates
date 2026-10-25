@@ -1,5 +1,4 @@
-//! Instance administration views shared by server and browser. No personal data
-//! beyond what the Admin País already manages (auditor accounts).
+//! Instance administration views shared by server and browser. No personal data.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,13 +34,6 @@ pub struct InstanceStats {
 pub struct AdminOverview {
     pub flags: Vec<FlagView>,
     pub stats: InstanceStats,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AuditorView {
-    pub email: String,
-    pub name: String,
-    pub granted_at: String,
 }
 
 #[cfg(test)]

@@ -66,6 +66,7 @@ pub async fn public_audit_listing(
         application::audit::{self, Scope},
         server::context,
     };
+    context::require_public_read(false, crate::domain::iam::Permission::AuditRead).await?;
     let state = context::state()?;
     let kind = kind.filter(|k| !k.is_empty());
     let (events, next) = audit::list(
@@ -120,7 +121,7 @@ pub fn AuditPublicPage() -> impl IntoView {
         info.and_then(|i| i.get())
             .and_then(|r| r.ok())
             .and_then(|i| i.viewer)
-            .is_some_and(|v| v.is_admin || v.is_auditor)
+            .is_some_and(|v| v.can(crate::domain::iam::Permission::AuditReadRestricted))
     };
     view! {
         <section class="page">

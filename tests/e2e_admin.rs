@@ -16,7 +16,7 @@ use dwc::{
 use fantoccini::{Locator, cookies::Cookie};
 use support::{App, Browser};
 
-/// Synthetic active COUNTRY_ADMIN with a session; returns the cookie token.
+/// Synthetic active administrator (AdministratorAccess) with a session; returns the cookie token.
 async fn seed_admin(path: &std::path::Path) -> String {
     let db = Db::open(path).await.unwrap();
     migrations::run(&db).await.unwrap();
@@ -47,7 +47,7 @@ async fn seed_admin(path: &std::path::Path) -> String {
     .await
     .unwrap();
     tx.execute(
-        "INSERT INTO user_roles (user_id, role, granted_at) VALUES ('admin-e2e', 'COUNTRY_ADMIN', ?1)",
+        "INSERT INTO iam_user_policies (user_id, policy_id, attached_at) VALUES ('admin-e2e', 'pol-administrator-access', ?1)",
         [ts(now)],
     )
     .await
@@ -83,7 +83,7 @@ async fn visitor_is_denied_admin_panel_after_hydration() {
             .await
             .is_err()
     );
-    browser.goto_hydrated(&app.url("/admin/auditores")).await;
+    browser.goto_hydrated(&app.url("/admin/iam")).await;
     browser
         .wait_text("[data-testid=admin-denied]", |t| !t.is_empty())
         .await;

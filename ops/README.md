@@ -9,7 +9,7 @@ Exemplos para uma VPS por país. Valores como `<subdominio>` são placeholders; 
 3. Crie o usuário `dwc`, `/etc/dwc/dwc.env` a partir de [`dwc.env.example`](dwc.env.example) (modo 0600), a chave em `DWC_SECRET_KEY_FILE` (32 bytes ou 64 hex, modo 0600, dono `dwc`; em produção outra permissão impede a inicialização) e `/var/lib/dwc/snapshots` (dono `dwc`).
 4. Instale [`systemd/dwc.service`](systemd/dwc.service) e o proxy [`caddy/Caddyfile`](caddy/Caddyfile). A aplicação escuta só em loopback.
 
-## Primeiro Admin País
+## Primeiro administrador
 
 O motor TursoDB trava o arquivo do banco para o processo dono. Comandos de operador rodam com o serviço parado, com o mesmo ambiente:
 
@@ -19,7 +19,7 @@ sudo -u dwc sh -c 'set -a; . /etc/dwc/dwc.env; cd /opt/dwc/current && ./dwc gran
 systemctl start dwc
 ```
 
-A conta precisa existir e estar ativa. O evento fica na auditoria (`actor_ref = operator:cli`). Auditores são credenciados depois pelo painel `/admin/auditores`.
+A conta precisa existir e estar ativa; recebe a política `AdministratorAccess`. O evento fica na auditoria (`actor_ref = operator:cli`). Auditores, moderadores e demais acessos são concedidos depois em `/admin/iam` (anexar políticas a usuários ou grupos).
 
 ## Flags
 

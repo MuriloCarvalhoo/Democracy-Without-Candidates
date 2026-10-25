@@ -145,6 +145,7 @@ pub async fn load_setup_diff(id: String) -> Result<SetupDiff, AppError> {
 #[server(endpoint = "statistics")]
 pub async fn public_statistics() -> Result<Statistics, AppError> {
     use crate::{application::statistics, features::proposals::api::srv, server::context};
+    context::require_public_read(true, crate::domain::iam::Permission::StatsRead).await?;
     let state = context::state()?;
     srv::advance(&state).await?;
     statistics::statistics(&state.db.read().await?).await

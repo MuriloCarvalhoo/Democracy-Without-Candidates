@@ -1,14 +1,14 @@
-//! Admin País panel: feature flags (stored vs effective, pending restart), instance
-//! health and auditor accreditation. The server authorizes every call; the panel
-//! never restarts the process.
+//! Administration panel: feature flags (stored vs effective, pending restart) and
+//! instance health. Accreditation is IAM (`features::iam`). The server authorizes
+//! every call; the panel never restarts the process.
 
 use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::{
-    domain::admin::{AdminOverview, AuditorView, FlagView, InstanceStats},
+    domain::admin::{AdminOverview, FlagView, InstanceStats},
     error::AppError,
-    features::ui::{Empty, Loading, action_error},
+    features::ui::{Loading, action_error},
     i18n::t,
 };
 
@@ -28,43 +28,19 @@ pub async fn set_feature_flag(key: String, enabled: bool) -> Result<(), AppError
     admin::set_flag(&state.db, state.now(), &actor, &key, enabled).await
 }
 
-#[server]
-pub async fn load_auditors() -> Result<Vec<AuditorView>, AppError> {
-    use crate::{application::admin, server::context};
-    let state = context::state()?;
-    let actor = context::require_actor().await?;
-    admin::list_auditors(&state.db, &actor).await
-}
-
-#[server]
-pub async fn grant_auditor_role(email: String) -> Result<(), AppError> {
-    use crate::{application::admin, server::context};
-    let state = context::state()?;
-    let actor = context::require_actor().await?;
-    admin::grant_auditor(&state.db, state.now(), &actor, &email).await
-}
-
-#[server]
-pub async fn revoke_auditor_role(email: String) -> Result<(), AppError> {
-    use crate::{application::admin, server::context};
-    let state = context::state()?;
-    let actor = context::require_actor().await?;
-    admin::revoke_auditor(&state.db, state.now(), &actor, &email).await
-}
-
 #[component]
 pub(crate) fn AdminNav() -> impl IntoView {
     view! {
         <nav class="row" aria-label=t("admin.nav")>
             <A href="/admin">{t("admin.nav.instance")}</A>
-            <A href="/admin/auditores">{t("admin.nav.auditors")}</A>
+            <A href="/admin/iam">{t("admin.nav.iam")}</A>
             <A href="/admin/moderacao">{t("debate.queue.nav")}</A>
         </nav>
     }
 }
 
 #[component]
-fn Denied(error: AppError) -> impl IntoView {
+pub(crate) fn Denied(error: AppError) -> impl IntoView {
     view! { <p class="notice error" role="alert" data-testid="admin-denied">{error.user_message()}</p> }
 }
 
@@ -203,66 +179,4 @@ fn StatsCard(stats: InstanceStats) -> impl IntoView {
             </dl>
         </section>
     }
-}
-
-#[component]
-pub fn AuditorsPage() -> impl IntoView {
-    let grant = ServerAction::<GrantAuditorRole>::new();
-    let revoke = ServerAction::<RevokeAuditorRole>::new();
-    let list = Resource::new(
-        move || (grant.version().get(), revoke.version().get()),
-        |_| load_auditors(),
-    );
-
-    view! {
-        <section class="page">
-            <h1>{t("admin.auditors.title")}</h1>
-            <AdminNav/>
-            <Transition fallback=|| view! { <Loading/> }>
-                {move || list.get().map(|r| match r {
-                    Err(error) => view! { <Denied error/> }.into_any(),
-                    Ok(auditors) => view! {
-                        <section class="card" aria-labelledby="grant-title">
-                            <h2 id="grant-title">{t("admin.auditors.grant")}</h2>
-                            <p class="hint">{t("admin.auditors.hint")}</p>
-                            <ActionForm action=grant>
-                                <label>{t("admin.auditors.email")}
-                                    <input type="email" name="email" required autocomplete="off" data-testid="auditor-email"/>
-                                </label>
-                                <button type="submit" disabled=move || grant.pending().get()>{t("admin.auditors.grant")}</button>
-                            </ActionForm>
-                            {move || action_error(grant.value().get())}
-                            {move || action_error(revoke.value().get())}
-                        </section>
-                        <AuditorList auditors revoke/>
-                    }.into_any(),
-                })}
-            </Transition>
-        </section>
-    }
-}
-
-#[component]
-fn AuditorList(
-    auditors: Vec<AuditorView>,
-    revoke: ServerAction<RevokeAuditorRole>,
-) -> impl IntoView {
-    if auditors.is_empty() {
-        return view! { <Empty message=t("admin.auditors.empty")/> }.into_any();
-    }
-    view! {
-        <ul class="list" data-testid="auditor-list">
-            {auditors.into_iter().map(|a| view! {
-                <li class="card row">
-                    <span><strong>{a.name}</strong>" — "{a.email.clone()}<br/>
-                        <span class="hint">{t("admin.auditors.since")}" "{a.granted_at}</span></span>
-                    <ActionForm action=revoke>
-                        <input type="hidden" name="email" value=a.email/>
-                        <button type="submit" class="danger">{t("admin.auditors.revoke")}</button>
-                    </ActionForm>
-                </li>
-            }).collect_view()}
-        </ul>
-    }
-    .into_any()
 }

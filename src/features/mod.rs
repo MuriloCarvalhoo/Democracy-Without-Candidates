@@ -8,6 +8,7 @@ pub mod debate;
 pub mod enroll;
 pub mod face;
 pub mod home;
+pub mod iam;
 pub mod login;
 pub mod metalaws;
 pub mod notifications;

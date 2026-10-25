@@ -10,22 +10,21 @@ O produto pretende comprovar identidade e impedir contas/votos duplicados, com b
 
 Provider de teste permite cenários determinísticos, nunca comprova identidade real e deve ser explicitamente habilitado e rejeitado em produção.
 
-## Papéis e limites
+## Autorização no modelo IAM
 
-| Papel | Acesso pretendido |
-| --- | --- |
-| VISITOR | Leitura pública de propostas, resultados e estatísticas |
-| PENDING_CITIZEN | Completar cadastro e validação, sem participação eleitoral |
-| CITIZEN | Perfil, propostas, assinaturas, votação e comentários conforme elegibilidade |
-| AUDITOR | Evidências autorizadas somente para leitura e dentro do escopo credenciado |
-| COUNTRY_ADMIN | Operação da instância e gestão territorial autorizada; sem alterar regras eleitorais diretamente |
-| MASTER_ADMIN | Funções de plataforma previstas no PRD; autoridade global e implantação ainda a revisar |
+Pedido do usuário (2026-10-25): permissionamento igual ao da AWS, conta admin master com tudo liberado na seed e cadastro novo sem ver tudo. Decisão do usuário: toda conta que fica ativa recebe automaticamente a política gerenciada `Cidadao`; administração, moderação, auditoria e flags só por políticas adicionais anexadas por um administrador. As demais escolhas abaixo são propostas do agente para revisão.
 
-Admin Master permanece na expansão pretendida; não é requisito da instância inicial. Não criar acesso global, banco global ou aprovação de cidadão pelo simples recebimento de um nome de role do cliente. Bootstrap de administradores e credenciamento de auditores dependem das decisões do PRD.
-
-Permissões seguem `recurso:ação`, por exemplo `proposal:create`, `proposal:sign`, `proposal:vote`, `profile:update` e `audit:read`. Escopo territorial, autoria e fase da proposta também são condições obrigatórias. Uma permissão nominal não autoriza um cidadão inelegível a votar.
-
-Administradores podem executar tarefas operacionais autorizadas; alteração de parâmetros eleitorais exige a meta-lei aprovada prevista em R07. O bootstrap do primeiro plebiscito permanece a especificar.
+- **Documento de política** (JSON validado no servidor, até 8 KiB e 32 declarações): `{"Version":"2026-10-25","Statement":[{"Sid":"...","Effect":"Allow"|"Deny","Action":[...],"Resource":[...]}]}`. `Action` aceita apenas o catálogo fixo em código (`domain::iam::Permission`), `*`, `serviço:*` e prefixo terminado em `*`; ação desconhecida, `Condition`, `NotAction` e outras chaves são recusadas. `Resource` aceita `*`, `jurisdiction:*` e `jurisdiction:<código IBGE>` (com `*` no fim, ex.: `jurisdiction:42*`).
+- **Avaliação** por requisição: Deny explícito vence qualquer Allow; sem correspondência é negação implícita. Checagens sem recurso usam o recurso `*`, que só casa com o padrão `*` (declaração restrita a jurisdição nunca concede ação global). Checagens territoriais (`moderation:act` em comentário/trava de debate) usam `jurisdiction:<código>`; o código só é consultado quando alguma declaração anexada é restrita.
+- **Catálogo:** `profile:read`, `profile:update`, `proposal:read`, `proposal:create`, `proposal:sign`, `proposal:vote`, `proposal:archive`, `comment:create`, `setup:start`, `setup:vote`, `moderation:act`, `flags:manage`, `admin:read`, `audit:read`, `audit:read_restricted`, `stats:read`, `iam:read`, `iam:manage`.
+- **Políticas gerenciadas** (migration `0500_iam`, somente leitura também por trigger): `AdministratorAccess` (`*` em `*`), `Cidadao` (perfil, leitura, criar/assinar/votar propostas, comentar, votar setup, auditoria pública, estatísticas), `Moderador` (`moderation:act`), `Auditor` (`audit:read`, `audit:read_restricted`) e `Publico` (`proposal:read`, `audit:read`, `stats:read`).
+- **Principais:** usuários e grupos; uma política pode ser anexada diretamente ou via grupo. Visitante é avaliado só contra `Publico`; toda conta pendente/ativa recebe `Publico` e a base em código `Conta` (`profile:read`).
+- **Situação da conta domina:** bloqueada → nada; pendente → `Conta` + `Publico` (anexos ignorados); ativa → `Conta` + `Publico` + anexos. Política nunca substitui elegibilidade (território do endereço imutável, eleitorado materializado), autoria, fase ou reautenticação.
+- **Eleitorado:** contas ativas com `Cidadao` anexada (direta ou por grupo). Um Deny de `proposal:vote` impede votar, mas a conta continua contada no eleitorado.
+- **Guardas:** só quem tem `iam:manage` altera políticas/grupos/anexos; cada mudança consome uma reautenticação (rosto + TOTP) `iam:manage`/`iam` na mesma transação, gera evento de auditoria restrito `iam.*` (sem segredos) e é recusada se deixar a instância sem titular ativo de `AdministratorAccess` capaz de `iam:manage` (inclui Deny anexado a si mesmo, direto ou por grupo). Política de cliente só é excluída depois de desanexada; gerenciadas não são editáveis nem excluíveis.
+- **Sem cache:** as políticas do ator são carregadas a cada requisição (consulta à tabela de usuário + uma consulta de políticas), então anexar/desanexar vale na requisição seguinte.
+- **Bootstrap:** `dwc grant-admin <email>` (serviço parado) anexa `AdministratorAccess` a uma conta ativa, auditado como `operator:cli`. A seed de desenvolvimento cria `master@dev.invalid` ("Admin Master Sintético", `AdministratorAccess` + `Cidadao`).
+- **Interface:** `/admin/iam` (políticas com editor JSON, grupos, usuários por e-mail com permissões efetivas, simulador usuário + ação + recurso → Allow/Deny e declaração decisiva). Menus seguem as ações permitidas do visitante (`Viewer.allowed`); o servidor continua sendo a fonte de verdade.
 
 ## Cadastro e status
 
@@ -33,7 +32,7 @@ Administradores podem executar tarefas operacionais autorizadas; alteração de 
 2. Criar identidade pendente, tratando duplicidade sem revelar contas de terceiros.
 3. Executar prova de identidade pelo provider, com falhas, timeout e bloqueio de tentativas definidos.
 4. Configurar segundo fator e política de recuperação conforme o fluxo aprovado.
-5. Ativar CITIZEN apenas após as verificações necessárias; fixtures sintéticas permanecem rotuladas como teste.
+5. Ativar a conta apenas após as verificações necessárias, anexando `Cidadao`; fixtures sintéticas permanecem rotuladas como teste.
 
 O endereço gravado no primeiro cadastro define cidade, estado e país de participação; alterações posteriores estão bloqueadas nesta versão, inclusive por chamadas diretas. Derivar o vínculo territorial no servidor a partir do endereço, sem confiar em IDs de jurisdição livres enviados pelo cliente. Endereço informado não comprova residência por si só; a busca por CEP usa o [provedor de endereço](backend-architecture.md#provedor-de-endereço) selecionado por flag. Tratamento de CEPs genéricos, resolução territorial e demais critérios de elegibilidade estão no PRD. Não persistir imagem facial bruta; forma de referência/template protegido depende do provedor. Não usar igualdade de um hash como especificação de matching biométrico.
 

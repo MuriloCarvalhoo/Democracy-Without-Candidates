@@ -155,6 +155,9 @@ pub async fn confirm_totp(
             (actor.user_id.as_str(), ts(deps.now)),
         )
         .await?;
+        // Every account that becomes active gets the managed citizen policy.
+        crate::application::iam::attach_cidadao(&tx, deps.now, &actor.user_id, "enrollment")
+            .await?;
         let codes = replace_recovery_codes(&tx, deps.now, &actor.user_id).await?;
         session::revoke(&tx, deps.now, &actor.session_hash, "privilege_change").await?;
         let token = session::create(&tx, deps.now, deps.policy, &actor.user_id).await?;

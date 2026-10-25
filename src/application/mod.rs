@@ -5,6 +5,7 @@ pub mod admin;
 pub mod audit;
 pub mod checkpoint;
 pub mod debate;
+pub mod iam;
 pub mod idempotency;
 pub mod identity;
 pub mod notify;

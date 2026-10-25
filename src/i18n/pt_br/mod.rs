@@ -5,6 +5,7 @@ mod audit;
 mod auth;
 mod common;
 mod debate;
+mod iam;
 mod notifications;
 mod profile;
 mod proposals;
@@ -18,6 +19,7 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         .or_else(|| profile::lookup(key))
         .or_else(|| proposals::lookup(key))
         .or_else(|| admin::lookup(key))
+        .or_else(|| iam::lookup(key))
         .or_else(|| debate::lookup(key))
         .or_else(|| voting::lookup(key))
 }

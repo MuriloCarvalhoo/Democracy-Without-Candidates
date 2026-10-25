@@ -51,10 +51,25 @@ impl Phase {
 
 const ELIGIBLE: &str = "FROM users u
     WHERE u.status = 'active'
-      AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'CITIZEN')
+      AND (EXISTS (SELECT 1 FROM iam_user_policies up WHERE up.user_id = u.id AND up.policy_id = 'pol-cidadao')
+           OR EXISTS (SELECT 1 FROM iam_user_groups ug JOIN iam_group_policies gp ON gp.group_id = ug.group_id
+                      WHERE ug.user_id = u.id AND gp.policy_id = 'pol-cidadao'))
       AND (u.municipality_id = ?1 OR u.state_id = ?1 OR u.country_id = ?1)";
 
-/// Materializes the eligible accounts of a jurisdiction (active CITIZEN accounts
+/// Number of eligible accounts of a jurisdiction right now.
+pub async fn electorate_count(conn: &Connection, jurisdiction_id: &str) -> Result<u64, AppError> {
+    Ok(query_opt(
+        conn,
+        &format!("SELECT COUNT(*) {ELIGIBLE}"),
+        [jurisdiction_id],
+    )
+    .await?
+    .ok_or(AppError::Internal)?
+    .get(0)?)
+}
+
+/// Materializes the eligible accounts of a jurisdiction (active accounts holding
+/// the managed `Cidadao` policy, directly or through a group,
 /// whose municipality/state/country matches) for one proposal phase. Immutable.
 /// An empty electorate cannot open a phase.
 pub async fn snapshot(
@@ -65,14 +80,7 @@ pub async fn snapshot(
     jurisdiction_id: &str,
     setup_version_id: &str,
 ) -> Result<(String, u64), AppError> {
-    let count: u64 = query_opt(
-        tx,
-        &format!("SELECT COUNT(*) {ELIGIBLE}"),
-        [jurisdiction_id],
-    )
-    .await?
-    .ok_or(AppError::Internal)?
-    .get(0)?;
+    let count = electorate_count(tx, jurisdiction_id).await?;
     if count == 0 {
         return Err(AppError::Conflict(
             t("proposals.error.empty_electorate").into(),

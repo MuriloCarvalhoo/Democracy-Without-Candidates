@@ -100,7 +100,7 @@ pub struct Registered {
     pub session_token: String,
 }
 
-/// Creates a pending account (CITIZEN role, no participation until enrollment)
+/// Creates a pending account (no policies; `Cidadao` is attached on enrollment)
 /// and a session to continue with face + TOTP enrollment.
 pub async fn register(
     deps: &Deps<'_>,
@@ -145,11 +145,6 @@ pub async fn register(
         }
         Err(e) => return Err(e.into()),
     }
-    tx.execute(
-        "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, 'CITIZEN', ?2)",
-        (user_id.as_str(), now.as_str()),
-    )
-    .await?;
     tx.execute(
         "INSERT INTO addresses (user_id, cep, state, city, neighborhood, street, service, ibge, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -226,15 +221,21 @@ mod tests {
         let conn = w.t.db.read().await.unwrap();
         let row = query_opt(
             &conn,
-            "SELECT u.email, u.status, m.code, a.cep, a.city, a.service, a.ibge, r.role, p.default_vote_visibility
+            "SELECT u.email, u.status, m.code, a.cep, a.city, a.service, a.ibge,
+                    (SELECT COUNT(*) FROM iam_user_policies up WHERE up.user_id = u.id), p.default_vote_visibility
              FROM users u JOIN jurisdictions m ON m.id = u.municipality_id JOIN addresses a ON a.user_id = u.id
-             JOIN user_roles r ON r.user_id = u.id JOIN user_preferences p ON p.user_id = u.id WHERE u.id = ?1",
+             JOIN user_preferences p ON p.user_id = u.id WHERE u.id = ?1",
             [r.user_id.as_str()],
         )
         .await
         .unwrap()
         .unwrap();
-        let got: Vec<String> = (0..9).map(|i| row.get::<String>(i).unwrap()).collect();
+        let got: Vec<String> = (0..9)
+            .map(|i| match i {
+                7 => row.get::<i64>(i).unwrap().to_string(),
+                _ => row.get::<String>(i).unwrap(),
+            })
+            .collect();
         assert_eq!(
             got,
             [
@@ -245,7 +246,7 @@ mod tests {
                 "Blumenau",
                 "open-cep",
                 r#"{"city":"4202404","state":"42"}"#,
-                "CITIZEN",
+                "0", // Cidadao is attached when enrollment completes
                 "private"
             ]
         );

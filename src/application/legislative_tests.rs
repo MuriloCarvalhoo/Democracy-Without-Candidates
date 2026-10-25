@@ -9,12 +9,15 @@ use super::{
     phases, proposals,
     proposals::{Ctx, ListFilter},
     reauth,
-    session::{SessionPolicy, testing::citizen_with_session, token_hash},
+    session::{
+        SessionPolicy,
+        testing::{attach_policy, citizen_with_session},
+        token_hash,
+    },
     setup, signatures,
 };
 use crate::{
     domain::{
-        identity::Role,
         proposals::{Level, Outcome, ProposalKind, ProposalStatus, Tally, view::DraftInput},
         setup::{SUGGESTED, SetupParams},
     },
@@ -91,16 +94,13 @@ impl World {
     async fn admin(&self, now: DateTime<Utc>) -> Actor {
         let a = self.citizen(now, "4202404").await;
         let tx = self.t.db.write().await.unwrap();
-        tx.execute(
-            "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, 'COUNTRY_ADMIN', 'now')",
-            [a.user_id.as_str()],
-        )
-        .await
-        .unwrap();
+        attach_policy(&tx, &a.user_id, "AdministratorAccess").await;
         tx.commit().await.unwrap();
-        let mut a = a;
-        a.roles.push(Role::CountryAdmin);
-        a
+        let conn = self.t.db.read().await.unwrap();
+        actor::load(&conn, &a.user_id, &a.session_hash)
+            .await
+            .unwrap()
+            .unwrap()
     }
 
     async fn adopt(&self, now: DateTime<Utc>, params: &SetupParams) {

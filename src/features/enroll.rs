@@ -146,11 +146,13 @@ fn FaceStep(on_done: Callback<()>) -> impl IntoView {
         busy.set(true);
         error.set(None);
         spawn_local(async move {
-            match submit_face_enrollment(f.challenge, f.image_b64).await {
+            let result = submit_face_enrollment(f.challenge, f.image_b64).await;
+            // Before `on_done`: it replaces this step and disposes its signals.
+            busy.set(false);
+            match result {
                 Ok(()) => on_done.run(()),
                 Err(e) => error.set(Some(e)),
             }
-            busy.set(false);
         });
     });
     view! {
@@ -173,11 +175,13 @@ fn TotpStep(on_done: Callback<Option<Vec<String>>>) -> impl IntoView {
         error.set(None);
         let value = code.get_untracked();
         spawn_local(async move {
-            match confirm_totp_enrollment(value).await {
+            let result = confirm_totp_enrollment(value).await;
+            // Before `on_done`: it replaces this step and disposes its signals.
+            busy.set(false);
+            match result {
                 Ok(codes) => on_done.run(codes),
                 Err(e) => error.set(Some(e)),
             }
-            busy.set(false);
         });
     };
     view! {

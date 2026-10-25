@@ -36,10 +36,12 @@ The Rust client has mock-server tests in `cargo test` and a manual contract test
 | `DWC_FACE_CONCURRENCY` | `2` | Parallel engine runs; extra requests wait, then get 503 |
 | `DWC_FACE_QUEUE_TIMEOUT_SECS` | `5` | Wait for a free engine slot |
 | `DWC_FACE_ENGINE` | `deepface` | `fake` only with `DWC_FACE_TEST_MODE=1` |
+| `DWC_FACE_DEBUG` | `0` | `1` logs each traced call (module, class, method, inputs); bytes, arrays, embeddings, base64 images and the key appear only as type and size |
 
 ## API
 
-All routes require the key header and a loopback peer. Nothing is stored or logged;
+All routes require the key header and a loopback peer. Nothing is stored or logged
+(`DWC_FACE_DEBUG` logs only sizes);
 images are decoded in memory (no temporary files).
 
 - `GET /healthz` → `{status, engine, liveness}`

@@ -22,6 +22,8 @@ class Settings:
     max_image_bytes: int
     concurrency: int
     queue_timeout_secs: float
+    # DWC_FACE_DEBUG=1: trace calls (inputs summarized, never images/embeddings).
+    debug: bool = False
 
     @property
     def max_request_bytes(self) -> int:
@@ -83,6 +85,10 @@ def from_env(env=None) -> Settings:
     if port > 65535:
         raise SettingsError("DWC_FACE_PORT must be within 1..65535")
 
+    debug = env.get("DWC_FACE_DEBUG", "").strip()
+    if debug not in ("", "0", "1"):
+        raise SettingsError(f"invalid DWC_FACE_DEBUG: {debug!r} (use 0 or 1)")
+
     return Settings(
         host=require_loopback(env.get("DWC_FACE_HOST", "127.0.0.1")),
         port=port,
@@ -92,4 +98,5 @@ def from_env(env=None) -> Settings:
         max_image_bytes=number("DWC_FACE_MAX_IMAGE_BYTES", 2 * 1024 * 1024, int, 1024),
         concurrency=number("DWC_FACE_CONCURRENCY", 2, int, 1),
         queue_timeout_secs=number("DWC_FACE_QUEUE_TIMEOUT_SECS", 5.0, float, 0.0),
+        debug=debug == "1",
     )

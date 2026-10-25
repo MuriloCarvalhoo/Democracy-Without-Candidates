@@ -1,11 +1,11 @@
 # Rust: memória, velocidade e más práticas segundo a documentação oficial
 
-**Data:** 2026-08-21 · **Toolchain:** rustc 1.98.0 stable · **Validação:** `docs/validacao-rust-praticas/`
+**Data:** 2026-08-21 (medições) · adaptado a este repositório em 2026-10-25 · **Toolchain do repo:** `rust-toolchain.toml`
 
-Este documento é irmão de `rust-memoria-e-desempenho.md` (pesquisa aplicada ao llama-rs:
-Vulkan, mmap, NUMA, alocadores). Aqui o escopo é o inverso: o que a **documentação oficial
-do Rust** afirma sobre economizar memória, ser mais rápido e o que evitar — e o que dessas
-afirmações se confirma **medindo nesta máquina** com dezenas a centenas de milhões de elementos.
+O que a **documentação oficial do Rust** afirma sobre economizar memória, ser mais rápido e o
+que evitar. As medições da §5 foram feitas em outro projeto (llama-rs, rustc 1.98.0, máquina
+Xeon); o harness e os dados brutos não fazem parte deste repositório. Elas indicam o sinal de
+cada prática, não medem esta aplicação.
 
 **Fontes** (nada aqui foi inventado — cada item cita a sua):
 
@@ -14,7 +14,7 @@ afirmações se confirma **medindo nesta máquina** com dezenas a centenas de mi
 - **[Cargo]** Cargo Book, referência de profiles — <https://doc.rust-lang.org/cargo/reference/profiles.html>
 - **[Clippy]** Índice de lints — <https://rust-lang.github.io/rust-clippy/master/index.html>
 
-**Legenda:** ✅ = confirmado por medição local (§5) · 📖 = afirmação da fonte, não medida aqui
+**Legenda:** ✅ = confirmado por medição no llama-rs (§5) · 📖 = afirmação da fonte, não medida aqui
 · ⚠️ = a fonte manda medir antes de adotar.
 
 ---
@@ -119,13 +119,13 @@ Defaults exatos do perfil `release` ([Cargo] profiles): `opt-level = 3`, `lto = 
 | Flag | O que a fonte afirma | Status |
 |---|---|---|
 | build de release | "speedups de 10-100x sobre dev builds são comuns" ([Perf Book] Build Configuration) | ✅ medido em §5 (`soma_matmul`) |
-| `lto = "thin"`/`"fat"` | "pode melhorar a velocidade em 10-20% ou mais" ([Perf Book]); `"thin"` roda em "substancialmente menos tempo com ganhos parecidos" ao fat ([Cargo]) | já ligado neste repo (`lto = "thin"`, com medições próprias em `rust-memoria-e-desempenho.md` §2.6) |
-| `codegen-units = 1` | mais unidades compilam em paralelo "mas podem produzir código mais lento" ([Cargo]); uma única unidade permite código melhor ([Perf Book]) | já ligado neste repo |
-| `-C target-cpu=native` | "pode melhorar a velocidade, especialmente se o compilador encontra oportunidades de vetorização" ([Perf Book]) | já ligado neste repo (`.cargo/config.toml`) |
+| `lto = "thin"`/`"fat"` | "pode melhorar a velocidade em 10-20% ou mais" ([Perf Book]); `"thin"` roda em "substancialmente menos tempo com ganhos parecidos" ao fat ([Cargo]) | servidor: **não ligado** (`[profile.release]` usa os defaults); WASM: `lto = true` no perfil `wasm-release` · ⚠️ medir com `just load` antes de ligar no servidor |
+| `codegen-units = 1` | mais unidades compilam em paralelo "mas podem produzir código mais lento" ([Cargo]); uma única unidade permite código melhor ([Perf Book]) | servidor: default (16); WASM: `codegen-units = 1` · ⚠️ medir antes |
+| `-C target-cpu=native` | "pode melhorar a velocidade, especialmente se o compilador encontra oportunidades de vetorização" ([Perf Book]) | não ligado: o binário roda numa VPS cuja CPU pode diferir da máquina de build · ⚠️ |
 | `opt-level` | aviso da doc: nível `3` **pode ser mais lento** que `2`, e `"s"`/`"z"` não são necessariamente menores; reavaliar a cada versão do rustc ([Cargo]) | 📖 |
-| `panic = "abort"` | "pode reduzir o binário e aumentar a velocidade levemente" ([Perf Book]); testes/benches **ignoram** a opção ([Cargo]) | fora neste repo: quebra `#[should_panic]` (nota no `Cargo.toml` raiz) |
-| PGO (`cargo-pgo`) | "10% ou mais" ([Perf Book]) | ⚠️ ver a leitura honesta em `rust-memoria-e-desempenho.md` §2.6: PGO recupera desempenho deixado na mesa, não cria |
-| alocador jemalloc/mimalloc | "podem trazer grandes melhorias" ([Perf Book] — crates externos) | ⚠️ no padrão deste projeto (alocações grandes e longevas) o efeito medido publicado é ~zero — `rust-memoria-e-desempenho.md` §1.5 |
+| `panic = "abort"` | "pode reduzir o binário e aumentar a velocidade levemente" ([Perf Book]); testes/benches **ignoram** a opção ([Cargo]) | servidor: não (um panic de handler não deve derrubar o processo); WASM: ligado no `wasm-release` |
+| PGO (`cargo-pgo`) | "10% ou mais" ([Perf Book]) | ⚠️ não adotado; recupera desempenho deixado na mesa, não cria |
+| alocador jemalloc/mimalloc | "podem trazer grandes melhorias" ([Perf Book] — crates externos) | ⚠️ não adotado; medir com `just load` antes |
 
 ### 2.2 Iteradores
 
@@ -152,8 +152,8 @@ Do [Perf Book] Bounds Checks, em ordem de preferência:
 2. 📖 Criar um slice local antes do laço e indexar o slice — o compilador rastreia melhor o
    comprimento.
 3. 📖 `assert!` sobre os ranges dos índices antes do laço.
-4. `get_unchecked` é o último recurso e é `unsafe` — **vedado neste repo**
-   (`unsafe_code = "deny"`).
+4. `get_unchecked` é o último recurso e é `unsafe` — este repo não usa `unsafe`; não introduzir
+   sem necessidade demonstrada e revisão.
 
 ### 2.4 Ordenação
 
@@ -212,8 +212,8 @@ Operações O(1) que substituem O(n): `swap_remove` em vez de `remove` quando a 
 importa; `retain` para remoção em massa ([Perf Book] Standard Library Types).
 
 Paralelismo: o capítulo do [Perf Book] é um apontador para `rayon`/`crossbeam` (crates
-externos), sem números. Para o custo real do rayon **neste projeto**, ver
-`rust-memoria-e-desempenho.md` §2.2.
+externos), sem números. Nesta aplicação o gargalo típico é I/O e o escritor único do TursoDB,
+não CPU; paralelizar exige medir primeiro.
 
 ---
 
@@ -290,26 +290,30 @@ entraram em 1.97; `replace_box` e `redundant_iter_cloned` em 1.92.
   desculpas por ela existir (§1.5).
 - 📖 Trocar de hasher/alocador/`parking_lot` **sem medir** — as três páginas correspondentes do
   Perf Book mandam medir antes; o caso ahash-no-rustc (§2.5) mostra troca "óbvia" que piorou.
-- Más práticas específicas deste projeto (async para GPU, `Arc<[u8]>::from(vec)` copiando
-  15 GB, `queue_wait_idle` por submissão): já documentadas em `rust-memoria-e-desempenho.md`.
+- Específicas desta aplicação async: trabalho de CPU pesado (Argon2, verificação longa da
+  cadeia de auditoria) direto numa task Tokio em vez de `spawn_blocking`, e segurar o escritor
+  `Db::write()` durante chamadas de rede ou hashing (ver AGENTS.md).
 
 ---
 
 ## 4. Aplicação neste repositório
 
-- `[profile.release]` com `lto = "thin"` + `codegen-units = 1` já segue §2.1; `panic = "abort"`
-  descartado com razão documentada no próprio `Cargo.toml`.
-- `target-cpu=native` já em `.cargo/config.toml`.
-- O workspace nega `unsafe_code` — portanto a escada de bounds checks (§2.3) para na etapa 3
-  (assertions); `get_unchecked` não é opção aqui.
-- `indexing_slicing = "warn"` no workspace já empurra para iteradores/`get` — coerente com §2.3.
-- O grupo `perf` do Clippy é warn por padrão; nada a configurar para ganhar §3.2 inteira.
+Estado verificado em 2026-10-25 (`Cargo.toml`, `.cargo/config.toml`, `Justfile`):
 
-## 5. Resultados medidos nesta máquina
+- Servidor (`[profile.release]`): defaults do Cargo — sem `lto`, `codegen-units = 16`,
+  `panic = "unwind"`. Mudar só com medição em build release (`just load`), conforme §2.1.
+- WASM (`[profile.wasm-release]`): `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
+  `panic = "abort"` — prioriza o tamanho do download.
+- Em dev, `argon2` e `blake2` compilam com `opt-level = 3` para o hash de senha não travar os testes.
+- Sem `target-cpu=native` e sem tabela `[lints]`; o código não usa `unsafe`.
+- `just check` roda Clippy com `-D warnings` no servidor e no WASM, então os lints do grupo
+  `perf` (§3.2), warn por padrão, já bloqueiam o build.
 
-**Ambiente:** 2× Xeon E5-2680 v4 (28 núcleos, 2 nós NUMA) · kernel 7.2.0-rc7 CachyOS · glibc ·
+## 5. Resultados medidos em outro projeto
+
+Medições feitas no llama-rs em 2026-08-21; o harness não está neste repositório. **Ambiente:** 2× Xeon E5-2680 v4 (28 núcleos, 2 nós NUMA) · kernel 7.2.0-rc7 CachyOS · glibc ·
 rustc 1.98.0 · release com `lto="thin"`, `codegen-units=1`, `target-cpu=native` · mediana de
-3 repetições, um processo por variante. Dados brutos: `docs/validacao-rust-praticas/resultados.csv`.
+3 repetições, um processo por variante.
 
 | Experimento (n) | Variante | Mediana | Pico RSS |
 |---|---|---:|---:|
@@ -379,23 +383,18 @@ rustc 1.98.0 · release com `lto="thin"`, `codegen-units=1`, `target-cpu=native`
   16 B; `String` 24 B vs `Box<str>` 16 B; enum com variante `[u8; 256]`: 257 B inline vs 16 B
   com `Box`.
 
-## 6. Como rodar a validação
+## 6. Como validar neste repositório
 
-```sh
-bash docs/validacao-rust-praticas/rodar.sh          # 3 repetições, ~4 min
-REPS=5 bash docs/validacao-rust-praticas/rodar.sh   # mais repetições
-```
-
-Saída bruta em `docs/validacao-rust-praticas/resultados.csv`
-(`resultado,experimento,variante,n,ms,pico_mb` + linhas `info,...`); medianas no stderr ao
-final. Cada variante roda num **processo separado** porque `VmHWM` (pico de RSS em
-`/proc/self/status`) é monotônico por processo. Um experimento aceita `n` custom:
-`target/release/validacao-rust-praticas ordenar sort 10000000`.
+- Regras e lints: `just check` (Clippy `-D warnings`, inclui o grupo `perf`).
+- Desempenho real: `just load <usuários> <duração>` contra build release, com integridade do
+  banco verificada ao final (`just load 20 30s` é o smoke usado na fundação).
+- Microbenchmarks isolados só quando um perfil apontar um caminho quente; registrar o resultado
+  no documento da área, não aqui.
 
 ## 7. Limites deste documento
 
-- O que está 📖 é afirmação de fonte confiável, **não** verificada nesta máquina; o que está ✅
-  foi medido aqui (§5) — em outra CPU/kernel/alocador os números mudam, o sinal raramente.
+- O que está 📖 é afirmação de fonte confiável, **não** verificada; o que está ✅ foi medido no
+  llama-rs (§5), não nesta aplicação — em outra CPU/kernel/alocador os números mudam, o sinal raramente.
 - O Perf Book afirma vários efeitos sem número ("pode ser mais rápido"); esses itens estão
   reproduzidos com a mesma modéstia da fonte.
 - Benchmarks locais medem operações isoladas em dados sintéticos grandes; efeitos de cache/ICache

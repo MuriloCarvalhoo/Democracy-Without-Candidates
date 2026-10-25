@@ -35,7 +35,7 @@
 
 ## Local execution and validation
 
-- Commands (Justfile): `just doctor`, `just dev-seed`, `just dev`, `just check`, `just test`, `just e2e`, `just face-test`, `just load`, `just backup-test`. Verify a command exists before reporting it.
+- Commands (Justfile): `just doctor`, `just dev-seed`, `just dev`, `just dev-debug` (`DWC_DEBUG=1`, function-level traces), `just check`, `just test`, `just e2e`, `just face-test`, `just load`, `just backup-test`. Verify a command exists before reporting it.
 - `cargo test` rebuilds `target/debug/dwc` with different cfg; browser tests must run through `just e2e`, which copies the cargo-leptos binary.
 - TursoDB: write through `Db::write()` only (one serialized writer; concurrent writers return Busy). The serving process locks the database file, so operator commands run on a stopped instance except online snapshots (SIGUSR1). Avoid triggers with long `OR` chains.
 - Server functions use fixed endpoints (`#[server(endpoint = ...)]`); a `#[server] fn foo_bar` generates a `FooBar` type.

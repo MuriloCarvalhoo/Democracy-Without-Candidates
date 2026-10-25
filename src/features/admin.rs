@@ -46,6 +46,7 @@ pub(crate) fn AdminNav() -> impl IntoView {
 
 #[component]
 pub(crate) fn Denied(error: AppError) -> impl IntoView {
+    crate::features::ui::set_error_status(&error);
     view! { <p class="notice error" role="alert" data-testid="admin-denied">{error.user_message()}</p> }
 }
 

@@ -9,11 +9,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use leptos::prelude::*;
+use leptos::{prelude::*, server_fn::error::SERVER_FN_ERROR_HEADER};
 use leptos_axum::{LeptosRoutes, generate_route_list};
 
 use super::AppState;
-use crate::app::{App, shell};
+use crate::{
+    app::{App, shell},
+    error::AppError,
+};
 
 pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
     let routes = generate_route_list(App);
@@ -42,6 +45,7 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
             move || provide_context(fallback_state.clone()),
             shell,
         ))
+        .layer(middleware::from_fn(server_fn_error_status))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             csrf_and_headers,
@@ -70,6 +74,29 @@ async fn health(axum::Extension(state): axum::Extension<AppState>) -> Response {
         Json(serde_json::json!({ "status": if ok { "ok" } else { "unavailable" } })),
     )
         .into_response()
+}
+
+/// Largest server function error body decoded to pick its status (errors are tiny).
+const MAX_ERROR_BODY: usize = 64 * 1024;
+
+/// `server_fn` answers every error with 500. Re-reads the JSON `AppError` body
+/// (unchanged, the client still decodes it) and sets the status it maps to.
+async fn server_fn_error_status(request: Request<Body>, next: Next) -> Response {
+    let response = next.run(request).await;
+    if response.status() != StatusCode::INTERNAL_SERVER_ERROR
+        || !response.headers().contains_key(SERVER_FN_ERROR_HEADER)
+    {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, MAX_ERROR_BODY).await else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    if let Ok(error) = serde_json::from_slice::<AppError>(&bytes) {
+        parts.status =
+            StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    Response::from_parts(parts, Body::from(bytes))
 }
 
 /// Rejects state-changing requests whose Origin (or Sec-Fetch-Site) is not this
@@ -137,6 +164,61 @@ mod tests {
             b = b.header(*k, *v);
         }
         b.body(Body::empty()).unwrap()
+    }
+
+    async fn status_through_layer(response: fn() -> Response) -> (StatusCode, String) {
+        use tower::ServiceExt;
+        let app = Router::new()
+            .route(
+                "/api/x",
+                axum::routing::post(move || async move { response() }),
+            )
+            .layer(middleware::from_fn(server_fn_error_status));
+        let res = app.oneshot(req(&[])).await.unwrap();
+        let status = res.status();
+        let body = axum::body::to_bytes(res.into_body(), MAX_ERROR_BODY)
+            .await
+            .unwrap();
+        (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    fn server_fn_error(error: AppError) -> Response {
+        use leptos::server_fn::{error::FromServerFnError, response::Res};
+        Response::error_response("/api/x", error.ser())
+    }
+
+    #[tokio::test]
+    async fn server_fn_errors_get_their_status_and_keep_the_body() {
+        let cases: [(fn() -> Response, u16, &str); 5] = [
+            (
+                || server_fn_error(AppError::Forbidden),
+                403,
+                "\"Forbidden\"",
+            ),
+            (|| server_fn_error(AppError::NotFound), 404, "\"NotFound\""),
+            (
+                || server_fn_error(AppError::validation("title", "curto")),
+                422,
+                "Validation",
+            ),
+            (
+                || server_fn_error(AppError::RateLimited),
+                429,
+                "RateLimited",
+            ),
+            (|| server_fn_error(AppError::Internal), 500, "Internal"),
+        ];
+        for (response, status, body) in cases {
+            let (got, text) = status_through_layer(response).await;
+            assert_eq!(got.as_u16(), status, "{text}");
+            assert!(text.contains(body), "{text}");
+        }
+        // Plain 500s without the server_fn marker are left alone.
+        let (got, _) = status_through_layer(|| {
+            (StatusCode::INTERNAL_SERVER_ERROR, "\"Forbidden\"").into_response()
+        })
+        .await;
+        assert_eq!(got, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]

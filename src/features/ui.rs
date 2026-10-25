@@ -4,8 +4,23 @@ use leptos::prelude::*;
 
 use crate::{error::AppError, i18n::t};
 
+/// During SSR, gives the document the HTTP status of the error it shows instead of
+/// its content (no-op in the browser).
+pub fn set_error_status(error: &AppError) {
+    #[cfg(feature = "ssr")]
+    if let Some(response) = use_context::<leptos_axum::ResponseOptions>() {
+        use axum::http::StatusCode;
+        response.set_status(
+            StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        );
+    }
+    #[cfg(not(feature = "ssr"))]
+    let _ = error;
+}
+
 #[component]
 pub fn ErrorNotice(error: AppError) -> impl IntoView {
+    set_error_status(&error);
     crate::client_errors::report_app_error(&error);
     view! { <p class="notice error" role="alert">{error.user_message()}</p> }
 }

@@ -37,6 +37,8 @@ pub struct Deps<'a> {
     pub face: &'a FaceVerifier,
     pub secrets: &'a SecretBox,
     pub policy: SessionPolicy,
+    /// Development/test only (`DWC_DEV_SKIP_TOTP`): TOTP codes are not checked.
+    pub skip_totp: bool,
 }
 
 /// One face capture bound to a single-use server challenge.
@@ -189,6 +191,9 @@ async fn check_totp(deps: &Deps<'_>, user_id: &str, code: &str) -> Result<Option
     let Some(sealed) = creds.totp_secret else {
         return Ok(None);
     };
+    if deps.skip_totp {
+        return Ok(Some(SKIPPED_TOTP_STEP));
+    }
     let secret = deps.secrets.open(&sealed, &totp_aad(user_id))?;
     Ok(totp::verify(
         &secret,
@@ -198,8 +203,14 @@ async fn check_totp(deps: &Deps<'_>, user_id: &str, code: &str) -> Result<Option
     ))
 }
 
+/// Step returned by `check_totp` when `skip_totp` is on; never recorded.
+const SKIPPED_TOTP_STEP: i64 = -1;
+
 /// Records the accepted step atomically; a concurrent replay of the same step fails.
 async fn record_totp_step(conn: &Connection, user_id: &str, step: i64) -> Result<(), AppError> {
+    if step == SKIPPED_TOTP_STEP {
+        return Ok(());
+    }
     let changed = conn
         .execute(
             "UPDATE user_credentials SET totp_last_step = ?2
@@ -393,6 +404,7 @@ pub mod testing {
                 face: &self.face,
                 secrets: &self.secrets,
                 policy: SessionPolicy::from_secs(900, 8 * 3600),
+                skip_totp: false,
             }
         }
 

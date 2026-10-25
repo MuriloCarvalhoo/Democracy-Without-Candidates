@@ -56,6 +56,7 @@ impl AppState {
             face: &self.face,
             secrets: &self.identity.secrets,
             policy: self.session_policy(),
+            skip_totp: self.config.dev_skip_totp,
         }
     }
 

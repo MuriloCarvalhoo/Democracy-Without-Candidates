@@ -297,6 +297,13 @@ pub async fn auth_face(
             token,
             pending: true,
         }
+    } else if purpose == Purpose::Login && deps.skip_totp {
+        consume_challenge(&tx, deps, &c.token_hash).await?;
+        let token = start_session(&tx, deps, user_id, &c.keys, "totp_skipped_dev").await?;
+        LoginOutcome::Session {
+            token,
+            pending: false,
+        }
     } else {
         tx.execute(
             "UPDATE auth_challenges SET face_ok = 1 WHERE token_hash = ?1 AND consumed_at IS NULL",
@@ -1058,6 +1065,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dev_skip_totp_completes_login_after_face_and_reauth_without_code() {
+        let w = World::new().await;
+        let e = enrolled(&w, "ana@example.org").await;
+        let d = Deps {
+            skip_totp: true,
+            ..w.deps()
+        };
+        let (token, _) = login_password(&d, None, &e.email, PASSWORD).await.unwrap();
+        let token = token.unwrap();
+        // Face is still required.
+        assert_eq!(
+            face_step(&w, &d, &token, Purpose::Login, b"outro rosto")
+                .await
+                .err(),
+            Some(face_not_confirmed())
+        );
+        let LoginOutcome::Session { token: s, pending } =
+            face_step(&w, &d, &token, Purpose::Login, FACE)
+                .await
+                .unwrap()
+        else {
+            panic!("expected a session right after face");
+        };
+        assert!(!pending);
+        let actor = actor_for(&w, &s).await;
+        reauth_with(&w, &d, &actor, "").await.unwrap();
+        reauth_with(&w, &d, &actor, "").await.unwrap();
+        assert_eq!(
+            count_str(
+                &w,
+                "SELECT payload FROM audit_events WHERE kind = 'identity.login_succeeded' ORDER BY seq DESC LIMIT 1",
+            )
+            .await,
+            r#"{"method":"totp_skipped_dev"}"#
+        );
+        // Without the flag the same empty code is refused.
+        assert_eq!(
+            reauth_with(&w, &w.deps(), &actor, "").await.err(),
+            Some(invalid_totp())
+        );
+    }
+
+    #[tokio::test]
     async fn anonymous_login_failures_never_block_session_reauth() {
         let w = World::new().await;
         let e = enrolled(&w, "ana@example.org").await;
@@ -1123,6 +1173,7 @@ mod tests {
             face: &FACE_VERIFIER,
             secrets: &SECRETS,
             policy: session::SessionPolicy::from_secs(900, 8 * 3600),
+            skip_totp: false,
         }
     }
 

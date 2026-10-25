@@ -69,6 +69,9 @@ pub struct Config {
     /// Reverse proxies whose `X-Forwarded-For` is trusted for the per-IP limit
     /// (`DWC_TRUSTED_PROXY`, comma-separated; empty: socket peer only).
     pub trusted_proxies: Vec<IpAddr>,
+    /// `DWC_DEV_SKIP_TOTP=1`: TOTP codes are not checked (development/test only;
+    /// rejected in production). Enrollment still stores a secret.
+    pub dev_skip_totp: bool,
 }
 
 pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
@@ -190,6 +193,18 @@ impl Config {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        let dev_skip_totp = match get("DWC_DEV_SKIP_TOTP").as_deref().map(str::trim) {
+            None | Some("") | Some("0") | Some("false") => false,
+            Some("1") | Some("true") if production => {
+                return Err(ConfigError::Invalid(
+                    "DWC_DEV_SKIP_TOTP",
+                    "TOTP cannot be skipped in production".into(),
+                ));
+            }
+            Some("1") | Some("true") => true,
+            Some(other) => return Err(ConfigError::Invalid("DWC_DEV_SKIP_TOTP", other.into())),
+        };
+
         let parse_secs = |key: &'static str, default: i64| -> Result<i64, ConfigError> {
             match get(key) {
                 None => Ok(default),
@@ -220,6 +235,7 @@ impl Config {
             brasilapi_url,
             ticker_secs: parse_secs("DWC_TICKER_SECS", 30)?,
             trusted_proxies,
+            dev_skip_totp,
         })
     }
 
@@ -389,6 +405,36 @@ mod tests {
             c.face_service_key_file.as_deref(),
             Some(std::path::Path::new("/etc/dwc/face.key"))
         );
+    }
+
+    #[test]
+    fn skip_totp_is_dev_only() {
+        assert!(!cfg(DEV).unwrap().dev_skip_totp);
+        let mut pairs = DEV.to_vec();
+        pairs.push(("DWC_DEV_SKIP_TOTP", "1"));
+        assert!(cfg(&pairs).unwrap().dev_skip_totp);
+        pairs.pop();
+        pairs.push(("DWC_DEV_SKIP_TOTP", "yes"));
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Invalid("DWC_DEV_SKIP_TOTP", _))
+        ));
+        let prod = [
+            ("DWC_ENV", "production"),
+            ("DWC_DB_PATH", "/var/lib/dwc/br.db"),
+            ("DWC_COUNTRY", "BR"),
+            ("DWC_PUBLIC_ORIGIN", "https://br.example.invalid"),
+            ("DWC_SECRET_KEY_FILE", "/etc/dwc/key"),
+            ("DWC_IDENTITY_PROVIDER", "face-service"),
+            ("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"),
+            ("DWC_FACE_SERVICE_KEY_FILE", "/etc/dwc/face.key"),
+            ("DWC_AUDIT_SIGNING_KEY_FILE", "/etc/dwc/audit.key"),
+            ("DWC_DEV_SKIP_TOTP", "1"),
+        ];
+        assert!(matches!(
+            cfg(&prod),
+            Err(ConfigError::Invalid("DWC_DEV_SKIP_TOTP", _))
+        ));
     }
 
     #[test]

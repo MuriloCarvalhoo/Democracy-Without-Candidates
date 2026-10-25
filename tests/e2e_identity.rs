@@ -8,7 +8,7 @@ use std::time::Duration;
 use axum::{Router, extract::Path, http::StatusCode, response::IntoResponse, routing::get};
 use dwc::infrastructure::{db::Db, flags, migrations, totp};
 use fantoccini::Locator;
-use support::{App, Browser, WAIT};
+use support::{App, Browser, WAIT, seed_dev};
 
 const IDLE_SECS: u64 = 12;
 
@@ -181,6 +181,35 @@ async fn register_enroll_logout_login_and_idle_expiry() {
     b.wait_text(".notice.error", |t| t.contains("expirou"))
         .await;
     wait_for(&b, "[data-testid=nav-login]").await;
+    b.close().await;
+}
+
+/// `DWC_DEV_SKIP_TOTP=1`: password + face sign in without the TOTP step.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires built app and chromedriver; run with `just e2e`"]
+async fn dev_skip_totp_signs_in_after_face() {
+    use dwc::infrastructure::fixtures::{DEV_FACE_PHRASE, DEV_PASSWORD};
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("e2e.db");
+    seed_dev(&db_path);
+    let app = App::start(&db_path, &[("DWC_DEV_SKIP_TOTP", "1")]);
+    let b = Browser::start().await;
+    b.goto_hydrated(&app.url("/login")).await;
+    wait_for(&b, "[data-testid=skip-totp-banner]").await;
+    fill(&b, "[data-testid=login-email]", "ana@dev.invalid").await;
+    fill(&b, "[data-testid=login-password]", DEV_PASSWORD).await;
+    click(&b, "[data-testid=login-submit]").await;
+    wait_for(&b, "[data-testid=face-phrase]").await;
+    fill(&b, "[data-testid=face-phrase]", DEV_FACE_PHRASE).await;
+    click(&b, "[data-testid=face-synthetic]").await;
+    wait_for(&b, "[data-testid=nav-profile]").await;
+    assert!(
+        b.client
+            .find(Locator::Css("[data-testid=login-code]"))
+            .await
+            .is_err(),
+        "no TOTP step"
+    );
     b.close().await;
 }
 

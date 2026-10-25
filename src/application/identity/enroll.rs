@@ -128,8 +128,14 @@ pub async fn confirm_totp(
     }
     let sealed = creds.totp_pending_secret.ok_or_else(not_allowed)?;
     let secret = deps.secrets.open(&sealed, &totp_aad(&actor.user_id))?;
-    let step =
-        totp::verify(&secret, code, deps.now.timestamp(), None).ok_or_else(super::invalid_totp)?;
+    let step = if deps.skip_totp {
+        None
+    } else {
+        Some(
+            totp::verify(&secret, code, deps.now.timestamp(), None)
+                .ok_or_else(super::invalid_totp)?,
+        )
+    };
 
     let tx = deps.db.write().await?;
     let changed = tx
@@ -280,6 +286,43 @@ pub mod tests {
             totp_secret: secret,
             recovery_codes: done.recovery_codes.unwrap(),
         }
+    }
+
+    #[tokio::test]
+    async fn dev_skip_totp_confirms_enrollment_without_code() {
+        let w = World::new().await;
+        let p = AddressProvider::brasilapi(
+            &mock_brasilapi().await,
+            std::time::Duration::from_millis(500),
+        );
+        let r = register::register(
+            &w.deps(),
+            Some(&p),
+            "BR",
+            register::Registration {
+                name: "Ana Sintética",
+                email: "ana@example.org",
+                password: PASSWORD,
+                cep: "89010025",
+            },
+        )
+        .await
+        .unwrap();
+        let a = actor_for(&w, &r.session_token).await;
+        let c = face_proof_challenge(&w, &a.user_id).await;
+        let proof = FaceProof {
+            challenge: &c,
+            image: FACE,
+        };
+        enroll_face(&w.deps(), &a, proof).await.unwrap();
+        begin_totp(&w.deps(), &a).await.unwrap();
+        let skip = Deps {
+            skip_totp: true,
+            ..w.deps()
+        };
+        let done = confirm_totp(&skip, &a, "").await.unwrap();
+        assert_eq!(done.recovery_codes.unwrap().len(), 10);
+        assert!(status(&w.deps(), &a.user_id).await.unwrap().totp_confirmed);
     }
 
     #[tokio::test]

@@ -2,6 +2,7 @@ pub fn lookup(key: &str) -> Option<&'static str> {
     Some(match key {
         "app.name" => "Democracia Sem Candidatos",
         "app.synthetic_banner" => "Ambiente de teste: dados sintéticos, sem validade eleitoral.",
+        "app.skip_totp_banner" => "TOTP desativado (DWC_DEV_SKIP_TOTP): deixe o código em branco.",
         "nav.home" => "Início",
         "nav.main" => "Navegação principal",
         "common.loading" => "Carregando…",

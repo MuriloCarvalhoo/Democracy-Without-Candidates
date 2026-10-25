@@ -22,6 +22,8 @@ pub struct Viewer {
 pub struct Instance {
     pub country: String,
     pub synthetic: bool,
+    /// `DWC_DEV_SKIP_TOTP` is on (never in production).
+    pub skip_totp: bool,
     pub enabled: Vec<String>,
     pub viewer: Option<Viewer>,
 }
@@ -54,6 +56,7 @@ pub async fn instance_info() -> Result<Instance, AppError> {
     Ok(Instance {
         country: state.config.country.name.to_owned(),
         synthetic: !state.config.is_production(),
+        skip_totp: state.config.dev_skip_totp,
         enabled: state
             .flags
             .enabled_keys()
@@ -124,8 +127,11 @@ pub fn Layout(children: Children) -> impl IntoView {
         </header>
         <crate::features::pwa::PwaRegistration/>
         <Transition fallback=|| ()>
-            {move || info.get().and_then(|r| r.ok()).filter(|i| i.synthetic).map(|_| view! {
+            {move || info.get().and_then(|r| r.ok()).filter(|i| i.synthetic).map(|i| view! {
                 <p class="banner" role="note">{t("app.synthetic_banner")}</p>
+                {i.skip_totp.then(|| view! {
+                    <p class="banner" role="note" data-testid="skip-totp-banner">{t("app.skip_totp_banner")}</p>
+                })}
             })}
         </Transition>
         <Show when=move || !online.get()>

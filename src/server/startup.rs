@@ -251,6 +251,9 @@ async fn serve(
         .await
         .map_err(|e| format!("feature flags: {e}"))?;
     tracing::info!(enabled = ?flags.enabled_keys(), env = ?config.env, country = config.country.code, "configuration loaded");
+    if config.dev_skip_totp {
+        tracing::warn!("DWC_DEV_SKIP_TOTP is on: TOTP codes are not checked (development only)");
+    }
 
     // Fails in production when the audit signing key file is absent/unsafe.
     let audit_public_key = signing::public_key_hex(&audit_key(&config)?);

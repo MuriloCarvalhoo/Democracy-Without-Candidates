@@ -86,8 +86,8 @@ CI (`.github/workflows/ci.yml`) usa os mesmos comandos. Erros de configuração,
 | Verificação | Resultado |
 | --- | --- |
 | `just check` | Passou |
-| `just test` | 159 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos) |
-| `just e2e` | 15 testes em 8 alvos passaram: fundação, identidade, propostas, debate, votação, auditoria, admin e PWA |
+| `just test` | 162 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos) |
+| `just e2e` | 16 testes em 8 alvos passaram: fundação, identidade (inclui `DWC_DEV_SKIP_TOTP`), propostas, debate, votação, auditoria, admin e PWA |
 | `just face-test` | 57 testes passaram |
 | `just load 20 30s` | 56.319 requisições, 0 falhas; 20/20 votos confirmados = 20 cédulas no banco, sem duplicatas; `integrity_check` ok; p95 ≤ 5 ms. Experimento local, não capacidade |
 | `just backup-test` | Passou: snapshot online durante escritas e offline restaurados, cadeia de auditoria válida |

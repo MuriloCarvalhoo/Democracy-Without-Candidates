@@ -28,12 +28,14 @@ use crate::{
     },
 };
 
-const USAGE: &str = "usage: dwc [serve | seed-dev | grant-admin <email> | backup <dest.db> | check-db | audit-checkpoint <out.json> | audit-verify <checkpoint.json> | seed-load <n> <out.json> | close-votes-at <rfc3339>]";
+const USAGE: &str = "usage: dwc [serve | seed-dev | seed-homolog [leis.json] | grant-admin <email> | backup <dest.db> | check-db | audit-checkpoint <out.json> | audit-verify <checkpoint.json> | seed-load <n> <out.json> | close-votes-at <rfc3339>]";
 
 /// `dwc` serves. Operator commands run against a stopped instance because the
 /// engine locks the database for the owning process:
-/// `seed-dev` (synthetic fixtures, non-production), `grant-admin <email>` (attaches
-/// the AdministratorAccess IAM policy to an existing active account), `backup <dest>` (consistent
+/// `seed-dev` (synthetic fixtures, non-production), `seed-homolog [leis.json]`
+/// (seed-dev + demonstrative proposals from existing laws, non-production),
+/// `grant-admin <email>` (attaches the AdministratorAccess IAM policy to an
+/// existing active account), `backup <dest>` (consistent
 /// snapshot), `check-db` (read-only verification, prints JSON), `audit-checkpoint
 /// <out.json>` (signs the audit head for export outside the VPS) and
 /// `audit-verify <checkpoint.json>` (checks one against the local chain).
@@ -65,6 +67,21 @@ pub async fn run() -> Result<(), String> {
             let done = crate::infrastructure::fixtures::seed_dev(&db, &config)
                 .await
                 .map_err(|e| format!("seed-dev: {e}"))?;
+            for line in done {
+                println!("{line}");
+            }
+            println!("restart the application to apply flag changes");
+            Ok(())
+        }
+        ["seed-homolog", rest @ ..] if rest.len() <= 1 => {
+            use crate::infrastructure::homolog_seed;
+            let path = rest
+                .first()
+                .map_or_else(|| homolog_seed::dataset_path(&config), PathBuf::from);
+            let db = prepare(&config).await?;
+            let done = homolog_seed::seed_homolog(&db, &config, &path)
+                .await
+                .map_err(|e| format!("seed-homolog: {e}"))?;
             for line in done {
                 println!("{line}");
             }

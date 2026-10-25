@@ -27,6 +27,15 @@ dev-seed:
     cargo leptos build
     {{dev_env}} LEPTOS_SITE_ROOT=target/site target/debug/dwc seed-dev
 
+# seed-dev + homologation proposals from existing laws (catalog/br/homologacao/leis.json).
+seed-homolog db="data/dev.db":
+    cargo leptos build
+    {{dev_env}} DWC_DB_PATH={{db}} LEPTOS_SITE_ROOT=target/site target/debug/dwc seed-homolog
+
+# Rebuild catalog/br/homologacao/leis.json from official sources (network; fails explicitly).
+homolog-laws:
+    tools/homolog-laws/build.sh build
+
 # Formatting, lint and compilation of the server and WASM targets.
 check: doctor
     cargo fmt --check

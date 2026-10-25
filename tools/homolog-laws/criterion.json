@@ -1,0 +1,19 @@
+{
+  "name": "Classes objetivas de impacto (proposta do agente para revisão)",
+  "rule": "Uma lei entra no conjunto se pertence a uma das classes abaixo, está publicada em fonte oficial verificável (HTTPS em domínio .gov.br, .leg.br ou .jus.br) e a página contém o título oficial, o número e o ano. Não há ranking por opinião: a classe define a inclusão.",
+  "national": [
+    "F1 constituicao: Constituição Federal (norma suprema; atinge toda a população).",
+    "F2 codigo: códigos e consolidações em vigor (civil, penal, processo civil e penal, trabalho, tributário, consumidor, trânsito) que regem todas as pessoas ou atividades econômicas.",
+    "F3 sistema: leis-quadro de sistemas ou direitos universais de alcance nacional (SUS, educação, previdência, assistência social, criança e adolescente, pessoa idosa, violência doméstica).",
+    "F4 administracao: leis gerais que vinculam toda a administração pública ou todo tratamento de dados/uso da internet (responsabilidade fiscal, licitações, acesso à informação, proteção de dados, marco civil).",
+    "F5 tributo: marco tributário nacional sobre o consumo (IBS, CBS e Imposto Seletivo)."
+  ],
+  "state": [
+    "E1 constituicao: Constituição Estadual (Lei Orgânica no Distrito Federal), norma suprema da unidade federativa.",
+    "E2 icms: lei instituidora do ICMS, maior receita tributária estadual, incide sobre o consumo de toda a população.",
+    "E3 ipva: lei do IPVA, atinge todo proprietário de veículo da unidade federativa.",
+    "E4 itcmd: lei do imposto sobre heranças e doações (ITCMD/ITCD/ITD), atinge toda transmissão causa mortis ou doação.",
+    "E5 servidores: estatuto dos servidores públicos civis do estado, usado só quando uma classe E2-E4 não pôde ser verificada."
+  ],
+  "minimums": "Ao menos 10 leis nacionais e 3 leis por unidade federativa; itens não verificáveis são excluídos e listados no relatório de curadoria, nunca inventados."
+}

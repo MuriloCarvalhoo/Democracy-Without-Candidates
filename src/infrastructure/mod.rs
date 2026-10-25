@@ -8,6 +8,7 @@ pub mod face;
 pub mod face_service;
 pub mod fixtures;
 pub mod flags;
+pub mod homolog_seed;
 pub mod migrations;
 pub mod password;
 pub mod secrets;

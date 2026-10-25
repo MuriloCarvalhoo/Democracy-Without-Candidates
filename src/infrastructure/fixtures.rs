@@ -111,6 +111,15 @@ pub async fn seed_dev(db: &Db, config: &Config) -> Result<Vec<String>, AppError>
 
 /// Active synthetic accounts with face (phrase) + TOTP enrolled. Idempotent.
 pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, AppError> {
+    seed_account_list(db, secrets, DEV_ACCOUNTS).await
+}
+
+/// [`seed_accounts`] for any `(e-mail, name, municipality IBGE code, policies)` list.
+pub async fn seed_account_list(
+    db: &Db,
+    secrets: &SecretBox,
+    accounts: &[(&str, &str, &str, &[&str])],
+) -> Result<Vec<String>, AppError> {
     let totp_secret = totp_rs::Secret::try_from_base32(DEV_TOTP_SECRET)
         .map_err(AppError::internal)?
         .as_bytes()
@@ -126,7 +135,7 @@ pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, 
     let mut out = vec![format!(
         "synthetic accounts (development only): password={DEV_PASSWORD} face phrase={DEV_FACE_PHRASE} totp secret={DEV_TOTP_SECRET}"
     )];
-    for (email, name, municipality, policies) in DEV_ACCOUNTS {
+    for (email, name, municipality, policies) in accounts {
         let tx = db.write().await?;
         if query_opt(&tx, "SELECT 1 FROM users WHERE email = ?1", [*email])
             .await?

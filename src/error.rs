@@ -48,6 +48,23 @@ impl AppError {
         }
     }
 
+    /// HTTP status for server function responses and SSR pages showing this error.
+    /// Only `Internal` is a server fault (500); `Transport` on the server means the
+    /// request could not be decoded (400).
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Self::Validation { .. } => 422,
+            Self::Unauthenticated | Self::SessionExpired | Self::ReauthRequired => 401,
+            Self::Forbidden | Self::FeatureDisabled(_) => 403,
+            Self::NotFound => 404,
+            Self::Conflict(_) | Self::PhaseClosed => 409,
+            Self::RateLimited => 429,
+            Self::Unavailable(_) => 503,
+            Self::Transport(_) => 400,
+            Self::Internal => 500,
+        }
+    }
+
     /// User-facing message in the instance language. Never contains private data.
     pub fn user_message(&self) -> String {
         match self {
@@ -110,3 +127,30 @@ impl From<turso::Error> for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+
+    #[test]
+    fn http_status_matches_error_kind() {
+        let cases = [
+            (AppError::validation("f", "m"), 422),
+            (AppError::Unauthenticated, 401),
+            (AppError::SessionExpired, 401),
+            (AppError::ReauthRequired, 401),
+            (AppError::Forbidden, 403),
+            (AppError::FeatureDisabled("x".into()), 403),
+            (AppError::NotFound, 404),
+            (AppError::Conflict("x".into()), 409),
+            (AppError::PhaseClosed, 409),
+            (AppError::RateLimited, 429),
+            (AppError::Unavailable("x".into()), 503),
+            (AppError::Transport("x".into()), 400),
+            (AppError::Internal, 500),
+        ];
+        for (error, status) in cases {
+            assert_eq!(error.http_status(), status, "{error:?}");
+        }
+    }
+}

@@ -9,7 +9,7 @@ use dwc::{
     infrastructure::{db::Db, migrations},
 };
 use serde_json::json;
-use support::{App, Browser};
+use support::{App, Browser, account_with_session, use_session};
 
 /// Writes synthetic events with the real engine before the app owns the database.
 async fn seed(path: &Path) {
@@ -102,63 +102,6 @@ async fn visitor_sees_public_log_and_is_denied_restricted_view() {
         "3"
     );
     browser.close().await;
-}
-
-/// Synthetic active account with the given IAM policy (id) and a live session (no
-/// login UI: the session row is created directly). Returns the cookie token.
-async fn account_with_session(db: &Db, email: &str, policy: &str) -> (String, String) {
-    use dwc::{
-        application::session::{self, SessionPolicy},
-        infrastructure::db::query_opt,
-    };
-    let now = chrono::Utc::now();
-    let tx = db.write().await.unwrap();
-    let row = query_opt(
-        &tx,
-        "SELECT m.id, s.id, s.parent_id FROM jurisdictions m JOIN jurisdictions s ON s.id = m.parent_id WHERE m.code = '4202404'",
-        (),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    let (m, s, c): (String, String, String) = (
-        row.get(0).unwrap(),
-        row.get(1).unwrap(),
-        row.get(2).unwrap(),
-    );
-    let id = format!("user-{policy}");
-    tx.execute(
-        "INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, synthetic, created_at, updated_at)
-         VALUES (?1, ?2, 'Pessoa Sintética', 'x', 'active', ?3, ?4, ?5, 1, 'now', 'now')",
-        (id.as_str(), email, m, s, c),
-    )
-    .await
-    .unwrap();
-    tx.execute(
-        "INSERT INTO iam_user_policies (user_id, policy_id, attached_at) VALUES (?1, ?2, 'now')",
-        (id.as_str(), policy),
-    )
-    .await
-    .unwrap();
-    let token = session::create(&tx, now, SessionPolicy::from_secs(900, 28800), &id)
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
-    (id, token)
-}
-
-async fn use_session(browser: &Browser, app: &App, token: &str) {
-    browser.client.goto(&app.url("/healthz")).await.unwrap();
-    browser.client.delete_all_cookies().await.unwrap();
-    // Test-only: the real cookie is HttpOnly and set by the login response.
-    browser
-        .client
-        .execute(
-            "document.cookie = 'dwc_session=' + arguments[0] + '; path=/; SameSite=Lax';",
-            vec![token.into()],
-        )
-        .await
-        .unwrap();
 }
 
 async fn click(browser: &Browser, css: &str) {

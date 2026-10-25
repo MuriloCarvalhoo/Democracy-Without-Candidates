@@ -124,13 +124,22 @@ pub fn seed_dev(db_path: &Path) {
 
 /// Plain HTTP GET returning (status, body) for non-browser checks (downloads).
 pub fn http_get(port: u16, path: &str) -> (u16, String) {
+    http_get_with(port, path, &[])
+}
+
+/// Plain HTTP GET with extra headers (e.g. a session cookie), returning (status, body).
+pub fn http_get_with(port: u16, path: &str, headers: &[(&str, &str)]) -> (u16, String) {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
+    let extra: String = headers
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}\r\n"))
+        .collect();
     write!(
         stream,
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n{extra}\r\n"
     )
     .unwrap();
     let mut raw = String::new();
@@ -405,4 +414,89 @@ impl fantoccini::wd::WebDriverCompatibleCommand for BrowserLog {
             Some(r#"{"type":"browser"}"#.to_owned()),
         )
     }
+}
+
+/// Synthetic active account with the given IAM policy (id) and a live session (no
+/// login UI: the session row is created directly). Returns the cookie token.
+pub async fn account_with_session(
+    db: &dwc::infrastructure::db::Db,
+    email: &str,
+    policy: &str,
+) -> (String, String) {
+    use dwc::{
+        application::session::{self, SessionPolicy},
+        infrastructure::db::query_opt,
+    };
+    let now = chrono::Utc::now();
+    let tx = db.write().await.unwrap();
+    let row = query_opt(
+        &tx,
+        "SELECT m.id, s.id, s.parent_id FROM jurisdictions m JOIN jurisdictions s ON s.id = m.parent_id WHERE m.code = '4202404'",
+        (),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let (m, s, c): (String, String, String) = (
+        row.get(0).unwrap(),
+        row.get(1).unwrap(),
+        row.get(2).unwrap(),
+    );
+    let id = format!("user-{policy}");
+    tx.execute(
+        "INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, synthetic, created_at, updated_at)
+         VALUES (?1, ?2, 'Pessoa Sintética', 'x', 'active', ?3, ?4, ?5, 1, 'now', 'now')",
+        (id.as_str(), email, m, s, c),
+    )
+    .await
+    .unwrap();
+    tx.execute(
+        "INSERT INTO iam_user_policies (user_id, policy_id, attached_at) VALUES (?1, ?2, 'now')",
+        (id.as_str(), policy),
+    )
+    .await
+    .unwrap();
+    let token = session::create(&tx, now, SessionPolicy::from_secs(900, 28800), &id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    (id, token)
+}
+
+/// Live session for an existing (seeded) account, created directly. Returns the token.
+pub async fn session_for(db: &dwc::infrastructure::db::Db, email: &str) -> String {
+    use dwc::{
+        application::session::{self, SessionPolicy},
+        infrastructure::db::query_opt,
+    };
+    let tx = db.write().await.unwrap();
+    let row = query_opt(&tx, "SELECT id FROM users WHERE email = ?1", [email])
+        .await
+        .unwrap()
+        .expect(email);
+    let id: String = row.get(0).unwrap();
+    let token = session::create(
+        &tx,
+        chrono::Utc::now(),
+        SessionPolicy::from_secs(900, 28800),
+        &id,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    token
+}
+
+/// Installs a session cookie in the browser (test-only: the real cookie is HttpOnly).
+pub async fn use_session(browser: &Browser, app: &App, token: &str) {
+    browser.client.goto(&app.url("/healthz")).await.unwrap();
+    browser.client.delete_all_cookies().await.unwrap();
+    browser
+        .client
+        .execute(
+            "document.cookie = 'dwc_session=' + arguments[0] + '; path=/; SameSite=Lax';",
+            vec![token.into()],
+        )
+        .await
+        .unwrap();
 }

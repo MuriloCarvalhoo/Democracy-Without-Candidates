@@ -3,9 +3,10 @@
 
 mod support;
 
+use dwc::infrastructure::db::Db;
 use fantoccini::Locator;
 use serde_json::Value;
-use support::{App, Browser, seed_dev};
+use support::{App, Browser, seed_dev, session_for, use_session};
 
 const PAGES: &[&str] = &[
     "/",
@@ -132,5 +133,68 @@ async fn layout_fits_mobile_and_desktop_with_reachable_navigation() {
     .unwrap();
     assert!(main_width <= 1200.0, "main too wide: {main_width}");
 
+    b.close().await;
+}
+
+/// IAM pages on the shared design (390px): policy documents in monospace, sub-nav
+/// pills on one scrollable line, effective permissions as chips, no page overflow.
+#[tokio::test]
+#[ignore = "requires built app and chromedriver; run with `just e2e`"]
+async fn iam_pages_follow_the_shared_layout_on_mobile() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("e2e.db");
+    seed_dev(&db);
+    let token = session_for(&Db::open(&db).await.unwrap(), "master@dev.invalid").await;
+    let app = App::start(&db, &[]);
+    let b = Browser::start().await;
+    use_session(&b, &app, &token).await;
+
+    let one_line_navs = "return [...document.querySelectorAll('nav.row')].every(n =>
+        new Set([...n.children].map(c => Math.round(c.getBoundingClientRect().top))).size === 1);";
+    let mono = "return getComputedStyle(document.querySelector(arguments[0])).fontFamily.includes('monospace');";
+    for (path, code) in [
+        ("/admin/iam/politicas", "[data-testid=iam-policy-document]"),
+        (
+            "/admin/iam/politicas/pol-administrator-access",
+            "[data-testid=iam-policy-json]",
+        ),
+    ] {
+        b.goto_hydrated(&app.url(path)).await;
+        b.wait_text("main h1", |t| !t.is_empty()).await;
+        let is_mono = b.client.execute(mono, vec![code.into()]).await.unwrap();
+        assert_eq!(is_mono, Value::Bool(true), "{code} monospace on {path}");
+        assert_eq!(js(&b, one_line_navs).await, Value::Bool(true), "{path}");
+        assert_eq!(overflow(&b).await, 0, "horizontal overflow on {path}");
+    }
+
+    b.goto_hydrated(&app.url("/admin/iam/usuarios?q=ana")).await;
+    b.client
+        .wait()
+        .at_most(support::WAIT)
+        .for_element(Locator::Css("[data-testid=iam-user-link]"))
+        .await
+        .unwrap()
+        .click()
+        .await
+        .unwrap();
+    b.wait_text("[data-testid=iam-effective]", |t| !t.is_empty())
+        .await;
+    let chip_rows = js(
+        &b,
+        "return new Set([...document.querySelectorAll('[data-testid=iam-effective] > li')]
+            .map(li => Math.round(li.getBoundingClientRect().top))).size;",
+    )
+    .await
+    .as_u64()
+    .unwrap();
+    let chips = js(
+        &b,
+        "return document.querySelectorAll('[data-testid=iam-effective] > li').length;",
+    )
+    .await
+    .as_u64()
+    .unwrap();
+    assert!(chip_rows < chips, "effective permissions wrap as chips");
+    assert_eq!(overflow(&b).await, 0, "horizontal overflow on user page");
     b.close().await;
 }

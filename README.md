@@ -40,3 +40,18 @@ Sugestões e dúvidas podem ser discutidas nas issues. Correções são bem-vind
 ## Licença
 
 [MIT](LICENSE).
+
+## Senha para teste Local 
+
+  ┌────────────────┬────────────────────────────────┐
+  │     Campo      │             Valor              │
+  ├────────────────┼────────────────────────────────┤
+  │ E-mail         │ master@dev.invalid             │
+  ├────────────────┼────────────────────────────────┤                                                                                                
+  │ Senha          │ senha-sintetica-dev            │                                                                                                            
+  ├────────────────┼────────────────────────────────┤
+  │ Frase de rosto │ rosto-sintetico-dev            │
+  ├────────────────┼────────────────────────────────┤
+  │ TOTP           │ pulado com DWC_DEV_SKIP_TOTP=1 │
+  └────────────────┴────────────────────────────────┘
+

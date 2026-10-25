@@ -98,7 +98,7 @@ pub fn EnrollPage() -> impl IntoView {
     let reenrolled = RwSignal::new(false);
 
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("auth.enroll.title")}</h1>
             <Show when=move || codes.get().is_none() && !reenrolled.get()>
                 <Transition fallback=|| view! { <p>{t("common.loading")}</p> }>

@@ -55,7 +55,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Link rel="manifest" href="/manifest.webmanifest"/>
-        <Meta name="theme-color" content="#1f4e79"/>
+        <Meta name="theme-color" content="#2238b0"/>
         <Title text=t("app.name")/>
         <Router>
             <Layout>

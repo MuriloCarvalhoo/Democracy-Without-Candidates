@@ -227,10 +227,26 @@ async fn citizen_notifications_and_auditor_restricted_access() {
     browser
         .wait_text("[data-testid=nav-unread]", |t| t.starts_with('2'))
         .await;
+    // Marker proves the click is handled by the hydrated page (no hydration
+    // error from invalid markup), not by a full-page form post.
+    browser
+        .client
+        .execute("window.__noReload = true;", vec![])
+        .await
+        .unwrap();
     click(&browser, "[data-read=false] button[type=submit]").await;
     browser
         .wait_text("[data-testid=notifications-unread]", |t| t.starts_with('1'))
         .await;
+    assert_eq!(
+        browser
+            .client
+            .execute("return window.__noReload === true;", vec![])
+            .await
+            .unwrap(),
+        serde_json::Value::Bool(true),
+        "mark-as-read must run in the hydrated page"
+    );
     browser
         .wait_text("[data-testid=nav-unread]", |t| t.starts_with('1'))
         .await;

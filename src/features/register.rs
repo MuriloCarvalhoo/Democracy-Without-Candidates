@@ -152,7 +152,7 @@ pub fn RegisterPage() -> impl IntoView {
     };
 
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("auth.register.title")}</h1>
             <form on:submit=submit novalidate=true>
                 <label>{t("auth.field.name")}

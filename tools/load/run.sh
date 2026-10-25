@@ -3,7 +3,8 @@
 #   tools/load/run.sh <users> <duration>     e.g. tools/load/run.sh 10 30s
 # Requires `cargo leptos build --release` (just load does it). Starts target/release/dwc
 # on a free loopback port with a disposable database, runs Goose, stops the app,
-# verifies database invariants and writes everything to artifacts/load/<timestamp>/.
+# verifies database invariants (including ballots == confirmed votes and the
+# closed result == ballots) and writes everything to artifacts/load/<timestamp>/.
 # Exits non-zero on startup timeout, threshold violations (>1% failures, p95 limits)
 # or broken invariants. Results are experiments, not capacity claims.
 set -euo pipefail
@@ -35,6 +36,10 @@ app_env=(env -i "PATH=$PATH" RUST_LOG=warn DWC_ENV=test DWC_DB_PATH="$WORK/load.
   LEPTOS_SITE_ADDR="127.0.0.1:$PORT")
 
 cd "$ROOT"
+# Synthetic voters (session + reauth grant each) for the concentrated vote. The
+# token file stays in the temporary work directory, never in the artifacts.
+"${app_env[@]}" "$BIN" seed-load "$USERS" "$WORK/voters.json" >"$OUT/seed-load.log" 2>&1 \
+  || { echo "seed-load failed (see $OUT/seed-load.log)" >&2; exit 1; }
 "${app_env[@]}" "$BIN" >"$OUT/app.log" 2>&1 &
 APP_PID=$!
 for _ in $(seq 1 120); do
@@ -47,7 +52,7 @@ curl -fsS "$HOST/healthz" >/dev/null || { echo "app not ready after 60 s" >&2; e
 echo "load: $USERS users for $DURATION against $HOST (release, disposable DB)"
 (cd "$ROOT/tools/load" && cargo build --release --quiet)
 set +e
-DWC_LOAD_SUMMARY="$OUT/summary.json" "$ROOT/tools/load/target/release/dwc-load" \
+DWC_LOAD_SUMMARY="$OUT/summary.json" DWC_LOAD_VOTERS="$WORK/voters.json" "$ROOT/tools/load/target/release/dwc-load" \
   --host "$HOST" --users "$USERS" --hatch-rate "$USERS" --run-time "$DURATION" \
   --report-file "$OUT/report.html" --report-file "$OUT/report.json" \
   --no-reset-metrics --quiet >"$OUT/goose.log" 2>&1
@@ -58,31 +63,45 @@ set -e
 COUNTER_HTTP=$(curl -fsS -X POST -H "Origin: $HOST" -H 'Content-Type: application/x-www-form-urlencoded' "$HOST/api/get_counter")
 kill "$APP_PID"; wait "$APP_PID" || true; APP_PID=""
 
-# Invariants on the stopped instance: engine integrity, migrations, audit chain and
-# the counter equal to the increments the server confirmed to clients.
+# Close the load vote (test-only command) so the stored result can be checked
+# against the ballots.
+"${app_env[@]}" "$BIN" close-votes-at 2100-01-01T00:00:00Z >"$OUT/close-votes.json" 2>&1 \
+  || { echo "close-votes-at failed (see $OUT/close-votes.json)" >&2; exit 1; }
+
+# Invariants on the stopped instance: engine integrity, migrations, audit chain,
+# the counter equal to the increments the server confirmed, ballots equal to the
+# votes the server confirmed, no duplicates/outsiders and result == ballots.
 set +e
 "${app_env[@]}" "$BIN" check-db >"$OUT/check-db.json" 2>"$OUT/check-db.err"
 CHECK_STATUS=$?
 set -e
 CONFIRMED=$(jq .increments_confirmed "$OUT/summary.json")
+VOTES=$(jq .votes_confirmed "$OUT/summary.json")
 COUNTER_DB=$(jq .synthetic_counter "$OUT/check-db.json" 2>/dev/null || echo "null")
+BALLOTS_DB=$(jq .voting.ballots "$OUT/check-db.json" 2>/dev/null || echo "null")
+RESULTS_DB=$(jq .voting.results "$OUT/check-db.json" 2>/dev/null || echo "null")
 INVARIANTS=ok
 [[ $CHECK_STATUS -eq 0 ]] || INVARIANTS="check-db failed"
 [[ "$COUNTER_DB" == "$CONFIRMED" && "$COUNTER_HTTP" == "$CONFIRMED" ]] || INVARIANTS="counter db=$COUNTER_DB http=$COUNTER_HTTP confirmed=$CONFIRMED"
+[[ "$BALLOTS_DB" == "$VOTES" ]] || INVARIANTS="ballots db=$BALLOTS_DB confirmed=$VOTES"
+# Every synthetic voter casts exactly one ballot: an empty sample proves nothing.
+[[ "$VOTES" == "$USERS" ]] || INVARIANTS="$INVARIANTS; confirmed votes $VOTES != voters $USERS"
+[[ "$RESULTS_DB" == "1" ]] || INVARIANTS="load vote not closed (results=$RESULTS_DB)"
 
 {
   echo "# Load experiment $(basename "$OUT")"
   echo
   echo "- commit: $(/usr/bin/git -C "$ROOT" rev-parse --short HEAD)$(/usr/bin/git -C "$ROOT" diff --quiet || echo ' (dirty)')"
   echo "- host: $(uname -srm), $(nproc) CPUs, $(awk '/MemTotal/ {printf "%.0f GiB", $2/1048576}' /proc/meminfo); generator on the same machine"
-  echo "- users: $USERS, duration: $DURATION, mix: 95% reads / 5% writes, DWC_ENV=test, synthetic data"
+  echo "- users: $USERS, duration: $DURATION, mix: one concentrated public vote per user at start, then 95% reads / 5% writes, DWC_ENV=test, synthetic data"
   jq -r '"- requests: \(.total_requests), failures: \(.total_failures) (\(.failure_rate*100 | tostring | .[0:6])%), throughput: \(.throughput_rps | tostring | .[0:8]) req/s"' "$OUT/summary.json"
   echo
   echo "| request | n | fail | p50 ms | p95 ms | p99 ms | max ms |"
   echo "| --- | --- | --- | --- | --- | --- | --- |"
   jq -r '.requests | to_entries[] | "| \(.key) | \(.value.requests) | \(.value.failures) | \(.value.p50_ms) | \(.value.p95_ms) | \(.value.p99_ms) | \(.value.max_ms) |"' "$OUT/summary.json"
   echo
-  echo "- invariants: $INVARIANTS (counter db=$COUNTER_DB, http=$COUNTER_HTTP, confirmed increments=$CONFIRMED; integrity=$(jq -c .integrity "$OUT/check-db.json" 2>/dev/null))"
+  echo "- invariants: $INVARIANTS (counter db=$COUNTER_DB, http=$COUNTER_HTTP, confirmed increments=$CONFIRMED; ballots db=$BALLOTS_DB, confirmed votes=$VOTES of $USERS voters; integrity=$(jq -c .integrity "$OUT/check-db.json" 2>/dev/null))"
+  echo "- voting check: $(jq -c .voting "$OUT/check-db.json" 2>/dev/null); closed: $(cat "$OUT/close-votes.json")"
   echo "- thresholds: $(jq -r 'if (.violations | length) == 0 then "ok" else (.violations | join("; ")) end' "$OUT/summary.json")"
 } >"$OUT/summary.md"
 cat "$OUT/summary.md"

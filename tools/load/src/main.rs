@@ -17,7 +17,7 @@ use serde::Serialize;
 const READ_P95_MS: usize = 2_000;
 const WRITE_P95_MS: usize = 3_000;
 const MAX_FAILURE_RATE: f64 = 0.01;
-const WRITES: &[&str] = &["increment_counter"];
+const WRITES: &[&str] = &["increment_counter", "voting/cast"];
 
 #[derive(Serialize)]
 struct RequestSummary {
@@ -38,6 +38,8 @@ struct Summary {
     failure_rate: f64,
     throughput_rps: f64,
     increments_confirmed: u64,
+    votes_confirmed: u64,
+    voters_available: usize,
     requests: BTreeMap<String, RequestSummary>,
     violations: Vec<String>,
 }
@@ -102,6 +104,8 @@ fn summarize(metrics: &GooseMetrics) -> Summary {
         failure_rate,
         throughput_rps: total as f64 / duration_secs as f64,
         increments_confirmed: scenarios::INCREMENTS_CONFIRMED.load(Ordering::Relaxed),
+        votes_confirmed: scenarios::VOTES_CONFIRMED.load(Ordering::Relaxed),
+        voters_available: scenarios::voters().map_or(0, |v| v.tokens.len()),
         requests,
         violations,
     }
@@ -110,7 +114,7 @@ fn summarize(metrics: &GooseMetrics) -> Summary {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics = GooseAttack::initialize()?
-        .register_scenario(scenarios::foundation()?)
+        .register_scenario(scenarios::democracy()?)
         .execute()
         .await?;
     let summary = summarize(&metrics);

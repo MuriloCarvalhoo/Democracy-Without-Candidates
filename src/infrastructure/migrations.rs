@@ -25,6 +25,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!("0100_identity"),
     migration!("0200_setup_proposals"),
     migration!("0300_debate"),
+    migration!("0400_voting"),
     migration!("0450_audit_notifications"),
 ];
 

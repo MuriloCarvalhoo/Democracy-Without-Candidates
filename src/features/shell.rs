@@ -97,7 +97,9 @@ pub fn Layout(children: Children) -> impl IntoView {
                 <A href="/">{t("nav.home")}</A>
                 <A href="/propostas">{t("nav.proposals")}</A>
                 <A href="/dashboard">{t("nav.dashboard")}</A>
-                <A href="/setup/historico">{t("nav.setup_history")}</A>
+                <A href="/metaleis">{t("nav.metalaws")}</A>
+                <A href="/setup">{t("nav.setup_history")}</A>
+                <A href="/estatisticas">{t("nav.statistics")}</A>
                 <A href="/auditoria">{t("nav.audit")}</A>
                 <NotificationsBadge/>
                 <Transition fallback=|| ()>

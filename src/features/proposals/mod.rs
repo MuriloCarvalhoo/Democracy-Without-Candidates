@@ -5,6 +5,7 @@ mod detail;
 mod form;
 
 pub use detail::{ProposalPage, SignersPage};
+pub(crate) use form::ProposalForm;
 pub use form::{EditProposalPage, NewProposalPage};
 
 use leptos::prelude::*;
@@ -77,11 +78,35 @@ fn ProposalCard(p: ProposalSummary) -> impl IntoView {
             <p>{p.summary.clone()}</p>
             {(collecting).then(|| p.signature_target.map(|target| view! { <SignatureProgress count=p.signature_count target/> }))}
             {p.deadline.clone().map(|d| view! { <p class="hint">{t("proposals.deadline")}": "{d}</p> })}
+            {vote_links(&p.id, p.status)}
         </li>
     }
 }
 
-fn summary_list(items: Vec<ProposalSummary>, empty: &'static str) -> AnyView {
+/// Vote/result links for proposals in or after voting.
+pub(crate) fn vote_links(id: &str, status: ProposalStatus) -> Option<AnyView> {
+    use ProposalStatus::*;
+    match status {
+        InVoting => Some(
+            view! {
+                <p class="row">
+                    <A href=format!("/propostas/{id}/votar") attr:class="button" attr:data-testid="vote-link">{t("voting.vote_link")}</A>
+                    <A href=format!("/propostas/{id}/resultado")>{t("voting.result.link")}</A>
+                </p>
+            }
+            .into_any(),
+        ),
+        Approved | Rejected | QuorumNotReached => Some(
+            view! {
+                <p><A href=format!("/propostas/{id}/resultado") attr:data-testid="result-link">{t("voting.result.link")}</A></p>
+            }
+            .into_any(),
+        ),
+        _ => None,
+    }
+}
+
+pub(crate) fn summary_list(items: Vec<ProposalSummary>, empty: &'static str) -> AnyView {
     if items.is_empty() {
         view! { <Empty message=empty/> }.into_any()
     } else {

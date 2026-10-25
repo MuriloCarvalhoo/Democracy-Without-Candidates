@@ -59,6 +59,9 @@ pub struct Config {
     /// BrasilAPI base URL. Overridable (`DWC_BRASILAPI_URL`) only outside production,
     /// so tests can point at a local mock.
     pub brasilapi_url: String,
+    /// Interval of the deadline/vote-closing and scheduled-notification tickers.
+    /// Overridable (`DWC_TICKER_SECS`) only outside production (E2E/demos).
+    pub ticker_secs: i64,
 }
 
 pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
@@ -197,6 +200,7 @@ impl Config {
             session_absolute_secs: parse_secs("DWC_SESSION_ABSOLUTE_SECS", 8 * 60 * 60)?,
             secure_cookies: production,
             brasilapi_url,
+            ticker_secs: parse_secs("DWC_TICKER_SECS", 30)?,
         })
     }
 
@@ -327,6 +331,10 @@ mod tests {
             "address mock rejected in production"
         );
         assert_eq!(c.brasilapi_url, BRASILAPI_URL);
+        assert_eq!(c.ticker_secs, 30);
+        let mut fast_ticker = base.to_vec();
+        fast_ticker.push(("DWC_TICKER_SECS", "1"));
+        assert!(cfg(&fast_ticker).is_err(), "ticker fixed in production");
     }
 
     #[test]

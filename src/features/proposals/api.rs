@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[cfg(feature = "ssr")]
-mod srv {
+pub(crate) mod srv {
     use crate::{
         application::{actor::Actor, phases},
         error::AppError,
@@ -50,7 +50,7 @@ mod srv {
     }
 }
 
-#[server]
+#[server(endpoint = "proposals/list")]
 pub async fn list_proposals(
     kind: Option<String>,
     status: Option<String>,

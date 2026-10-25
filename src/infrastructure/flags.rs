@@ -107,9 +107,16 @@ impl Flags {
 
     #[cfg(test)]
     pub fn with(keys: &[&'static str]) -> Self {
+        Self::with_keys(keys)
+    }
+
+    /// Explicit state for operator/test commands; blocked features stay off.
+    pub fn with_keys(keys: &[&'static str]) -> Self {
         let mut flags = Self::default();
         for d in CATALOG {
-            flags.enabled.insert(d.key, keys.contains(&d.key));
+            flags
+                .enabled
+                .insert(d.key, keys.contains(&d.key) && is_implemented(d.key));
         }
         flags
     }

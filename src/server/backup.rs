@@ -14,7 +14,10 @@ use std::{
 use serde::Serialize;
 
 use crate::{
-    application::audit::{self, ChainStatus},
+    application::{
+        audit::{self, ChainStatus},
+        voting,
+    },
     infrastructure::{
         db::{Db, query_all, query_opt},
         migrations,
@@ -80,6 +83,7 @@ pub struct DbReport {
     pub migrations_pending: Vec<String>,
     pub audit_chain: String,
     pub synthetic_counter: i64,
+    pub voting: voting::VotingCheck,
     pub tables: BTreeMap<String, i64>,
 }
 
@@ -89,11 +93,12 @@ impl DbReport {
         self.integrity == ["ok"]
             && self.migrations_pending.is_empty()
             && self.audit_chain.starts_with("valid")
+            && self.voting.healthy()
     }
 }
 
 /// Read-only verification: engine integrity check, migration state for this
-/// binary, audit chain and row counts per table. Fails on unknown/edited migrations.
+/// binary, audit chain, voting invariants and row counts per table. Fails on unknown/edited migrations.
 pub async fn check(db: &Db) -> Result<DbReport, BackupError> {
     let conn = db.read().await?;
     let mut integrity = Vec::new();
@@ -144,6 +149,7 @@ pub async fn check(db: &Db) -> Result<DbReport, BackupError> {
         migrations_pending: pending.into_iter().map(String::from).collect(),
         audit_chain,
         synthetic_counter,
+        voting: voting::integrity(&conn).await?,
         tables,
     })
 }

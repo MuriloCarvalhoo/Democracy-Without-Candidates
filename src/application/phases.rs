@@ -14,6 +14,7 @@ use super::{
     notify::{Notice, notify},
     proposals::{self, ProposalRow},
     setup::{self, SetupVersion},
+    voting,
 };
 use crate::{
     domain::{
@@ -177,7 +178,7 @@ pub async fn close_collection(
 }
 
 /// Opens voting with the setup effective now and a fresh electorate snapshot.
-/// Ballots, tally and closing belong to the voting feature (`close_vote`).
+/// Notifies the jurisdiction (`voting::on_opened`) in the same transaction.
 pub async fn open_voting(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -201,7 +202,8 @@ async fn open_voting_with(
 ) -> Result<(), AppError> {
     let (snapshot_id, electorate) =
         snapshot(tx, now, &p.id, Phase::Voting, &p.jurisdiction_id, setup_id).await?;
-    let ends = ts(now + Duration::days(params.rules(p.kind).vote_days.into()));
+    let ends_at = now + Duration::days(params.rules(p.kind).vote_days.into());
+    let ends = ts(ends_at);
     let changed = tx
         .execute(
             "UPDATE proposals SET status = 'in_voting', vote_setup_version_id = ?3, vote_snapshot_id = ?4,
@@ -220,7 +222,8 @@ async fn open_voting_with(
         ProposalStatus::InVoting,
         json!({ "vote_ends_at": ends, "electorate": electorate }),
     )
-    .await
+    .await?;
+    voting::on_opened(tx, now, p, ends_at).await
 }
 
 /// Ids whose current phase deadline has passed.
@@ -248,8 +251,8 @@ async fn due(conn: &Connection, now: &str) -> Result<Vec<(String, ProposalStatus
 /// state inside the transaction. Collection deadline → `expired`; debate end →
 /// `in_voting`. Returns the applied `(id, new status)` pairs.
 ///
-/// Votes past `vote_ends_at` are left `in_voting`: the voting feature closes
-/// them with `close_vote` (hook: call it from here once ballots exist).
+/// Votes past `vote_ends_at` are then closed by `voting::close_due_votes`
+/// (tally from ballots + `close_vote`), also one transaction each.
 pub async fn advance_due(
     db: &Db,
     now: DateTime<Utc>,
@@ -308,6 +311,7 @@ pub async fn advance_due(
         tx.commit().await?;
         applied.push((id, to));
     }
+    applied.extend(voting::close_due_votes(db, now).await?);
     Ok(applied)
 }
 
@@ -471,7 +475,8 @@ pub async fn start_initial_setup(
     let row = proposals::load(&tx, &id).await?.ok_or(AppError::Internal)?;
     let (snapshot_id, electorate) =
         snapshot(&tx, now, &id, Phase::Voting, &national, &package).await?;
-    let ends = ts(now + Duration::days(params.rules(ProposalKind::InitialSetup).vote_days.into()));
+    let ends_at = now + Duration::days(params.rules(ProposalKind::InitialSetup).vote_days.into());
+    let ends = ts(ends_at);
     tx.execute(
         "UPDATE proposals SET status = 'in_voting', published_at = ?2, vote_setup_version_id = ?3, vote_snapshot_id = ?4,
            vote_started_at = ?2, vote_ends_at = ?5, updated_at = ?2 WHERE id = ?1 AND status = 'draft'",
@@ -486,6 +491,7 @@ pub async fn start_initial_setup(
         json!({ "vote_ends_at": ends, "electorate": electorate }),
     )
     .await?;
+    voting::on_opened(&tx, now, &row, ends_at).await?;
     tx.commit().await?;
     Ok(id)
 }

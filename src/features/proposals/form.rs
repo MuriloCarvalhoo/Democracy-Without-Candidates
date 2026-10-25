@@ -64,10 +64,21 @@ pub fn EditProposalPage() -> impl IntoView {
     }
 }
 
+/// Draft form. `fixed_kind` hides the kind selector (e.g. `/metaleis/nova`).
 #[component]
-fn ProposalForm(draft: Option<Draft>, params: SetupParams) -> impl IntoView {
+pub(crate) fn ProposalForm(
+    draft: Option<Draft>,
+    params: SetupParams,
+    #[prop(optional)] fixed_kind: Option<ProposalKind>,
+) -> impl IntoView {
     let id = draft.as_ref().map(|d| d.id.clone());
-    let kind = RwSignal::new(draft.as_ref().map_or(ProposalKind::NormalLaw, |d| d.kind));
+    let kind = RwSignal::new(
+        draft
+            .as_ref()
+            .map(|d| d.kind)
+            .or(fixed_kind)
+            .unwrap_or(ProposalKind::NormalLaw),
+    );
     let level = RwSignal::new(draft.as_ref().map_or(Level::Municipal, |d| d.level));
     let title = RwSignal::new(draft.as_ref().map(|d| d.title.clone()).unwrap_or_default());
     let summary = RwSignal::new(
@@ -120,7 +131,7 @@ fn ProposalForm(draft: Option<Draft>, params: SetupParams) -> impl IntoView {
     view! {
         <p class="hint">{t("proposals.draft_notice")}</p>
         <form on:submit=on_submit>
-            <label>{t("proposals.field.kind")}
+            <label class:hidden=fixed_kind.is_some()>{t("proposals.field.kind")}
                 <select name="kind" on:change=move |ev| {
                     if let Some(k) = ProposalKind::from_db(&event_target_value(&ev)) { kind.set(k) }
                 }>

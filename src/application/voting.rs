@@ -187,9 +187,16 @@ pub async fn cast(
             e.into()
         }
     })?;
+    // Incremented with the accepted ballot instead of counting every ballot.
+    tx.execute(
+        "INSERT INTO ballot_counts (proposal_id, ballots) VALUES (?1, 1)
+         ON CONFLICT(proposal_id) DO UPDATE SET ballots = ballots + 1",
+        [id],
+    )
+    .await?;
     let cast: u64 = query_opt(
         &tx,
-        "SELECT COUNT(*) FROM ballots WHERE proposal_id = ?1",
+        "SELECT ballots FROM ballot_counts WHERE proposal_id = ?1",
         [id],
     )
     .await?
@@ -395,7 +402,7 @@ pub async fn close_due_votes(
     db: &Db,
     now: DateTime<Utc>,
 ) -> Result<Vec<(String, ProposalStatus)>, AppError> {
-    let ids = phases::due_votes(&db.read().await?, now).await?;
+    let ids = phases::due_votes(&*db.read().await?, now).await?;
     let mut closed = Vec::new();
     for id in ids {
         let tx = db.write().await?;
@@ -555,6 +562,8 @@ pub struct VotingCheck {
     pub results_mismatch: i64,
     /// Closed votes (approved/rejected/quorum) without a stored result.
     pub closed_without_result: i64,
+    /// Proposals whose stored ballot or signature counter differs from the rows.
+    pub counter_mismatch: i64,
 }
 
 impl VotingCheck {
@@ -563,6 +572,7 @@ impl VotingCheck {
             && self.ballots_outside_snapshot == 0
             && self.results_mismatch == 0
             && self.closed_without_result == 0
+            && self.counter_mismatch == 0
     }
 }
 
@@ -602,6 +612,13 @@ pub async fn integrity(conn: &Connection) -> Result<VotingCheck, turso::Error> {
         closed_without_result: one(
             "SELECT COUNT(*) FROM proposals p WHERE p.status IN ('approved', 'rejected', 'quorum_not_reached')
                AND NOT EXISTS (SELECT 1 FROM vote_results r WHERE r.proposal_id = p.id)",
+        )
+        .await?,
+        counter_mismatch: one(
+            "SELECT COUNT(*) FROM proposals p WHERE
+               p.signature_count <> (SELECT COUNT(*) FROM signatures s WHERE s.proposal_id = p.id AND s.active = 1)
+               OR COALESCE((SELECT c.ballots FROM ballot_counts c WHERE c.proposal_id = p.id), 0)
+                  <> (SELECT COUNT(*) FROM ballots b WHERE b.proposal_id = p.id)",
         )
         .await?,
     })

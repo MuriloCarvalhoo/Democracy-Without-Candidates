@@ -14,10 +14,6 @@ use crate::{
     i18n::t,
 };
 
-#[cfg(feature = "ssr")]
-static CHAIN_CACHE: std::sync::LazyLock<crate::application::audit::ChainCache> =
-    std::sync::LazyLock::new(Default::default);
-
 /// Chain status, latest checkpoints and the checkpoint public key.
 #[cfg(feature = "ssr")]
 async fn listing(
@@ -45,7 +41,7 @@ async fn listing(
                 .clone()
         }),
     };
-    let chain = audit::summary(&conn, &CHAIN_CACHE, state.now()).await?;
+    let chain = audit::summary(&conn, audit::process_chain_cache(), state.now()).await?;
     Ok(AuditListing {
         events,
         next_before,
@@ -71,7 +67,7 @@ pub async fn public_audit_listing(
     let state = context::state()?;
     let kind = kind.filter(|k| !k.is_empty());
     let (events, next) = audit::list(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         Scope::Public,
         kind.as_deref(),
         before,

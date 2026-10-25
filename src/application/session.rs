@@ -28,6 +28,9 @@ impl SessionPolicy {
     }
 }
 
+/// Minimum idle-window gain that justifies a session renewal write.
+pub const TOUCH_GRANULARITY: Duration = Duration::seconds(60);
+
 pub fn token_hash(token: &str) -> String {
     sha256_hex(token)
 }
@@ -89,9 +92,11 @@ pub async fn resolve(
     if actor.status == crate::domain::identity::AccountStatus::Blocked {
         return Err(AppError::Forbidden);
     }
-    if touch {
+    let new_idle = (now + policy.idle).min(absolute);
+    // Renewing at most once per TOUCH_GRANULARITY keeps navigation off the single
+    // writer; the idle window may end up to that much earlier than "last request + idle".
+    if touch && new_idle - idle >= TOUCH_GRANULARITY {
         let tx = db.write().await?;
-        let new_idle = (now + policy.idle).min(absolute);
         tx.execute(
             "UPDATE sessions SET last_seen_at = ?2, idle_expires_at = ?3
              WHERE id_hash = ?1 AND revoked_at IS NULL AND idle_expires_at > ?2",
@@ -261,6 +266,66 @@ mod tests {
             .await
             .unwrap()
             .is_some()
+        );
+    }
+
+    async fn stored_idle(db: &Db, token: &str) -> String {
+        let conn = db.read().await.unwrap();
+        query_opt(
+            &conn,
+            "SELECT idle_expires_at FROM sessions WHERE id_hash = ?1",
+            [token_hash(token)],
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .get(0)
+        .unwrap()
+    }
+
+    /// A touch within TOUCH_GRANULARITY of the last renewal does not write; the
+    /// first one after it renews. Idle expiry never drifts more than the granularity.
+    #[tokio::test]
+    async fn touch_writes_at_most_once_per_granularity() {
+        let (t, policy, now) = setup().await;
+        let (_, token) = citizen_with_session(&t.db, now, policy, "4202404").await;
+        let created = stored_idle(&t.db, &token).await;
+        let soon = now + Duration::seconds(59);
+        assert!(
+            resolve(&t.db, soon, policy, &token, true)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            stored_idle(&t.db, &token).await,
+            created,
+            "no write within 60 s"
+        );
+        let later = now + Duration::seconds(60);
+        assert!(
+            resolve(&t.db, later, policy, &token, true)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(stored_idle(&t.db, &token).await, ts(later + policy.idle));
+        // Skipped touch at +59 s: the session still expires at most 60 s early.
+        assert!(
+            resolve(
+                &t.db,
+                soon + policy.idle - Duration::seconds(1),
+                policy,
+                &token,
+                false
+            )
+            .await
+            .unwrap()
+            .is_some()
+        );
+        assert_eq!(
+            resolve(&t.db, later + policy.idle, policy, &token, false).await,
+            Err(AppError::SessionExpired)
         );
     }
 

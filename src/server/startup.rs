@@ -325,6 +325,11 @@ async fn serve(
         state.clock.clone(),
         ticker,
     ));
+    // Full audit chain recomputation off the request path.
+    tokio::spawn(crate::application::audit::run_chain_verifier(
+        state.db.clone(),
+        state.clock.clone(),
+    ));
     let app = router(state, leptos_options);
 
     let listener = tokio::net::TcpListener::bind(&addr)

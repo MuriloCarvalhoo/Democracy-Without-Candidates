@@ -189,9 +189,13 @@ pub(crate) async fn walk(
     })
 }
 
-/// Full recomputation interval for [`summary`]; in between, only new events are
-/// verified on top of the last verified head.
+/// Interval of the background full recomputation ([`run_chain_verifier`]);
+/// requests only verify new events on top of the last verified head.
 pub const FULL_RECHECK: chrono::Duration = chrono::Duration::minutes(10);
+
+/// A request walks the whole chain itself only when the background pass is
+/// this late (or has not run yet, e.g. right after startup).
+const STALE_FULL_PASS: chrono::Duration = chrono::Duration::minutes(20);
 
 struct Verified {
     seq: i64,
@@ -220,9 +224,16 @@ impl ChainView {
 #[derive(Default)]
 pub struct ChainCache(tokio::sync::Mutex<Option<Verified>>);
 
-/// Chain status for display. Incremental between full recomputations, so the
+/// The cache shared by the `/auditoria` pages and the background verifier.
+pub fn process_chain_cache() -> &'static ChainCache {
+    static CACHE: std::sync::LazyLock<ChainCache> = std::sync::LazyLock::new(Default::default);
+    &CACHE
+}
+
+/// Chain status for display. Incremental on top of the last full pass, so the
 /// cost per request is proportional to new events. A rewrite of already verified
-/// rows is detected at the next full pass (and at every process start).
+/// rows is detected by the next full pass ([`recheck_chain`], every
+/// [`FULL_RECHECK`] in the background and at the first request after start).
 #[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn summary(
     conn: &Connection,
@@ -231,7 +242,7 @@ pub async fn summary(
 ) -> Result<ChainView, AppError> {
     let mut cached = cache.0.lock().await;
     let (status, full_at, mut kinds) = match cached.take() {
-        Some(mut v) if now - v.full_at < FULL_RECHECK => {
+        Some(mut v) if now - v.full_at < STALE_FULL_PASS => {
             let status = walk(conn, v.seq, &v.head, i64::MAX, &mut v.kinds).await?;
             (status, v.full_at, v.kinds)
         }
@@ -264,6 +275,56 @@ pub async fn summary(
         }
     }
     Ok(ChainView { status, kinds })
+}
+
+/// Full recomputation from genesis, without holding the cache while walking
+/// (requests keep being served incrementally). A valid chain replaces the
+/// cached head; a broken one clears it, so requests report the break.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
+pub async fn recheck_chain(
+    conn: &Connection,
+    cache: &ChainCache,
+    now: DateTime<Utc>,
+) -> Result<ChainStatus, AppError> {
+    let mut kinds = Kinds::new();
+    let status = walk(conn, 0, GENESIS, i64::MAX, &mut kinds).await?;
+    let mut cached = cache.0.lock().await;
+    *cached = match &status {
+        ChainStatus::Valid { events, head } => Some(Verified {
+            seq: *events,
+            head: head.clone(),
+            full_at: now,
+            kinds,
+        }),
+        ChainStatus::Broken { .. } => None,
+    };
+    Ok(status)
+}
+
+/// Background task: full chain recomputation every [`FULL_RECHECK`].
+pub async fn run_chain_verifier(
+    db: Db,
+    clock: std::sync::Arc<dyn crate::infrastructure::clock::Clock>,
+) {
+    let mut tick = tokio::time::interval(
+        FULL_RECHECK
+            .to_std()
+            .unwrap_or(std::time::Duration::from_secs(600)),
+    );
+    loop {
+        tick.tick().await;
+        let result = match db.read().await {
+            Ok(conn) => recheck_chain(&conn, process_chain_cache(), clock.now()).await,
+            Err(e) => Err(e.into()),
+        };
+        match result {
+            Ok(ChainStatus::Valid { .. }) => {}
+            Ok(ChainStatus::Broken { at_seq }) => {
+                tracing::error!(at_seq, "audit chain broken")
+            }
+            Err(e) => tracing::warn!(error = %e, "audit chain verification failed"),
+        }
+    }
 }
 
 /// Who is reading: public visitors never receive restricted events or actor refs.
@@ -365,7 +426,7 @@ pub async fn read_restricted(
     )
     .await?;
     tx.commit().await?;
-    list(&db.read().await?, Scope::Restricted, kind, before).await
+    list(&*db.read().await?, Scope::Restricted, kind, before).await
 }
 
 #[cfg(test)]
@@ -650,6 +711,50 @@ mod tests {
         assert_eq!(
             full.kinds(Scope::Restricted),
             incremental.kinds(Scope::Restricted)
+        );
+    }
+
+    /// Requests stay incremental while the background pass is recent; the full
+    /// pass detects a rewrite of already verified rows and requests then report it.
+    #[tokio::test]
+    async fn background_full_pass_detects_rewrite_of_verified_rows() {
+        let t = migrated().await;
+        let cache = ChainCache::default();
+        let now = Utc::now();
+        let tx = t.db.write().await.unwrap();
+        for _ in 0..3 {
+            append(&tx, now, ev("k", Visibility::Public, None))
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+        let conn = t.db.read().await.unwrap();
+        assert!(matches!(
+            recheck_chain(&conn, &cache, now).await.unwrap(),
+            ChainStatus::Valid { events: 3, .. }
+        ));
+        // Simulated tampering of a verified row (the trigger blocks normal updates).
+        conn.execute("DROP TRIGGER audit_events_no_update", ())
+            .await
+            .unwrap();
+        conn.execute("UPDATE audit_events SET payload = '{}' WHERE seq = 2", ())
+            .await
+            .unwrap();
+        let later = now + FULL_RECHECK + chrono::Duration::minutes(1);
+        assert!(
+            matches!(
+                summary(&conn, &cache, later).await.unwrap().status,
+                ChainStatus::Valid { events: 3, .. }
+            ),
+            "request path only walks new events"
+        );
+        assert_eq!(
+            recheck_chain(&conn, &cache, later).await.unwrap(),
+            ChainStatus::Broken { at_seq: 2 }
+        );
+        assert_eq!(
+            summary(&conn, &cache, later).await.unwrap().status,
+            ChainStatus::Broken { at_seq: 2 }
         );
     }
 

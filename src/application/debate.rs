@@ -13,7 +13,6 @@ use super::{
     actor::Actor,
     audit::{self, Event, Visibility},
     iam,
-    identity::profile,
     notify::{Notice, notify},
     proposals::{self, Ctx, ProposalRow, local},
 };
@@ -650,20 +649,6 @@ pub async fn set_lock(
     Ok(())
 }
 
-/// Display label: public profile name, otherwise a neutral label.
-async fn author_label(
-    conn: &Connection,
-    cache: &mut HashMap<String, String>,
-    user_id: &str,
-) -> Result<String, AppError> {
-    if let Some(label) = cache.get(user_id) {
-        return Ok(label.clone());
-    }
-    let label = profile::public_label(conn, user_id).await?;
-    cache.insert(user_id.to_owned(), label.clone());
-    Ok(label)
-}
-
 fn placeholders(from: usize, n: usize) -> String {
     (from..from + n)
         .map(|i| format!("?{i}"))
@@ -723,8 +708,12 @@ pub async fn thread(
         rows = query_all(
             conn,
             &format!(
-                "SELECT id, parent_id, depth, author_id, body, status, created_at, edited_at FROM comments
-                 WHERE proposal_id = ?1 AND root_id IN ({}) ORDER BY created_at, rowid",
+                "SELECT c.id, c.parent_id, c.depth, c.author_id, c.body, c.status, c.created_at, c.edited_at,
+                        CASE WHEN pr.user_id IS NULL THEN NULL ELSE u.name END
+                 FROM comments c
+                 LEFT JOIN users u ON u.id = c.author_id AND u.status = 'active'
+                 LEFT JOIN user_preferences pr ON pr.user_id = u.id AND pr.profile_visibility = 'public'
+                 WHERE c.proposal_id = ?1 AND c.root_id IN ({}) ORDER BY c.created_at, c.rowid",
                 placeholders(2, roots.len())
             ),
             params,
@@ -761,7 +750,6 @@ pub async fn thread(
         None => (HashSet::new(), HashMap::new()),
     };
 
-    let mut labels = HashMap::new();
     let mut by_id: HashMap<String, CommentView> = HashMap::new();
     let mut children: BTreeMap<Option<String>, Vec<String>> = BTreeMap::new();
     for r in rows {
@@ -776,7 +764,10 @@ pub async fn thread(
         let view = CommentView {
             parent_id: parent_id.clone(),
             depth,
-            author: author_label(conn, &mut labels, &author_id).await?,
+            // Public profile name (active account, public profile), as `profile::public_label`.
+            author: r
+                .get::<Option<String>>(8)?
+                .unwrap_or_else(|| t("debate.author.private").to_owned()),
             own,
             body: (!removed || moderator)
                 .then(|| r.get::<String>(4))
@@ -1028,12 +1019,15 @@ pub async fn amendments(
         .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let locked = lock_info(conn, &p.id, tz).await?.is_some();
     let is_author = viewer.is_some_and(|a| a.user_id == p.author_id);
-    let mut labels = HashMap::new();
     let mut items = Vec::new();
     for r in query_all(
         conn,
-        "SELECT id, author_id, title, body, text_hash, status, status_note, created_at FROM amendments
-         WHERE proposal_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 200",
+        "SELECT a.id, a.author_id, a.title, a.body, a.text_hash, a.status, a.status_note, a.created_at,
+                CASE WHEN pr.user_id IS NULL THEN NULL ELSE u.name END
+         FROM amendments a
+         LEFT JOIN users u ON u.id = a.author_id AND u.status = 'active'
+         LEFT JOIN user_preferences pr ON pr.user_id = u.id AND pr.profile_visibility = 'public'
+         WHERE a.proposal_id = ?1 ORDER BY a.created_at DESC, a.rowid DESC LIMIT 200",
         [p.id.as_str()],
     )
     .await?
@@ -1045,7 +1039,10 @@ pub async fn amendments(
         let open = status == AmendmentStatus::Open;
         items.push(AmendmentView {
             id: r.get(0)?,
-            author: author_label(conn, &mut labels, &author_id).await?,
+            // Public profile name (active account, public profile), as `profile::public_label`.
+            author: r
+                .get::<Option<String>>(8)?
+                .unwrap_or_else(|| t("debate.author.private").to_owned()),
             own,
             title: r.get(2)?,
             body: r.get(3)?,

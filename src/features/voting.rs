@@ -34,7 +34,7 @@ pub async fn load_vote_page(id: String) -> Result<VoteData, AppError> {
     let viewer = srv::viewer().await?;
     srv::advance(&state).await?;
     voting::page(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &state.flags,
         state.now(),
         state.tz(),
@@ -85,7 +85,7 @@ pub async fn check_vote_status(
     let state = context::state()?;
     let actor = context::require_actor().await?;
     voting::status(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         state.tz(),
         &actor,
         &id,
@@ -102,7 +102,7 @@ pub async fn load_vote_result(id: String) -> Result<ResultData, AppError> {
     let state = context::state()?;
     srv::advance(&state).await?;
     voting::result(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         state.now(),
         state.tz(),
         !state.config.is_production(),
@@ -152,7 +152,7 @@ pub async fn load_setup_diff(id: String) -> Result<SetupDiff, AppError> {
     use crate::{application::plebiscite, features::proposals::api::srv, server::context};
     srv::check_id(&id)?;
     let state = context::state()?;
-    plebiscite::diff(&state.db.read().await?, &id).await
+    plebiscite::diff(&*state.db.read().await?, &id).await
 }
 
 #[server(endpoint = "statistics")]
@@ -165,7 +165,11 @@ pub async fn public_statistics() -> Result<Statistics, AppError> {
     context::require_public_read(true, crate::domain::iam::Permission::StatsRead).await?;
     let state = context::state()?;
     srv::advance(&state).await?;
-    statistics::statistics(&state.db.read().await?).await
+    statistics::statistics(
+        &*state.db.read().await?,
+        statistics::process_citizen_counts(),
+    )
+    .await
 }
 
 fn route_id() -> Memo<String> {

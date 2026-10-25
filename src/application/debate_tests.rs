@@ -903,4 +903,57 @@ async fn author_labels_respect_profile_visibility() {
     assert!(v.comments[0].own && v.comments[0].can_edit);
     assert_eq!(v.comments[1].author, "Cidadã Sintética");
     assert!(!v.comments[1].own && v.comments[1].can_report);
+
+    // Labels come from the comments/amendments query; they must match
+    // `profile::public_label` (blocked or private accounts show the neutral label).
+    let blocked = w.citizen("4202404").await;
+    w.sql(
+        "INSERT INTO user_preferences (user_id, profile_visibility, updated_at) VALUES (?1, 'public', 'now')",
+        [blocked.user_id.as_str()],
+    )
+    .await;
+    w.post(&blocked, &id, None, "Conta bloqueada depois")
+        .await
+        .unwrap();
+    debate::propose_amendment(
+        &w.ctx(),
+        &public,
+        &id,
+        "Emenda pública",
+        "Art. 1º Texto sugerido de emenda.",
+    )
+    .await
+    .unwrap();
+    debate::propose_amendment(
+        &w.ctx(),
+        &private,
+        &id,
+        "Emenda privada",
+        "Art. 2º Outro texto sugerido aqui.",
+    )
+    .await
+    .unwrap();
+    w.sql(
+        "UPDATE users SET status = 'blocked' WHERE id = ?1",
+        [blocked.user_id.as_str()],
+    )
+    .await;
+    let v = w.view(None, &id).await;
+    assert_eq!(v.comments.len(), 3);
+    assert_eq!(v.comments[2].author, "Cidadão(ã)", "blocked account");
+    let conn = w.t.db.read().await.unwrap();
+    for (comment, who) in v.comments.iter().zip([&private, &public, &blocked]) {
+        assert_eq!(
+            comment.author,
+            crate::application::identity::profile::public_label(&conn, &who.user_id)
+                .await
+                .unwrap()
+        );
+    }
+    let list = debate::amendments(&conn, &w.flags, w.now, Sao_Paulo, None, &id)
+        .await
+        .unwrap();
+    let mut labels: Vec<&str> = list.items.iter().map(|i| i.author.as_str()).collect();
+    labels.sort_unstable();
+    assert_eq!(labels, ["Cidadã Sintética", "Cidadão(ã)"]);
 }

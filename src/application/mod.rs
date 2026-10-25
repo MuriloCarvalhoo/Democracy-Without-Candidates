@@ -17,6 +17,7 @@ pub mod session;
 pub mod setup;
 pub mod signatures;
 pub mod statistics;
+pub mod territory;
 pub mod voting;
 
 #[cfg(test)]

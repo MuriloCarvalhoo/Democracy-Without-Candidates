@@ -30,7 +30,7 @@ pub async fn unread_notification_count() -> Result<Option<i64>, AppError> {
     };
     let state = context::state()?;
     Ok(Some(
-        notify::unread_count(&state.db.read().await?, &actor.user_id).await?,
+        notify::unread_count(&*state.db.read().await?, &actor.user_id).await?,
     ))
 }
 
@@ -40,7 +40,7 @@ pub async fn notification_list(page: u32) -> Result<NotificationPage, AppError> 
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
     let state = context::state()?;
-    notify::list(&state.db.read().await?, &actor.user_id, page).await
+    notify::list(&*state.db.read().await?, &actor.user_id, page).await
 }
 
 #[server]
@@ -79,7 +79,7 @@ pub async fn notification_settings() -> Result<Vec<Preference>, AppError> {
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
     let state = context::state()?;
-    notify::preferences(&state.db.read().await?, &actor.user_id).await
+    notify::preferences(&*state.db.read().await?, &actor.user_id).await
 }
 
 #[server]

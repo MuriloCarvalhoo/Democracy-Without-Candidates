@@ -64,7 +64,7 @@ pub async fn list_proposals(
     let filter =
         proposals::ListFilter::parse(kind.as_deref(), status.as_deref(), level.as_deref(), page)?;
     srv::advance(&state).await?;
-    proposals::list(&state.db.read().await?, state.tz(), &filter).await
+    proposals::list(&*state.db.read().await?, state.tz(), &filter).await
 }
 
 #[server]
@@ -100,7 +100,7 @@ pub async fn get_draft(id: String) -> Result<Draft, AppError> {
     srv::check_id(&id)?;
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    proposals::get_draft(&state.db.read().await?, &actor, &id).await
+    proposals::get_draft(&*state.db.read().await?, &actor, &id).await
 }
 
 /// Effective setup parameters for the caller's municipality, or `None` when no
@@ -218,7 +218,7 @@ pub async fn proposal_signers(id: String) -> Result<Signers, AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
     let state = context::state()?;
-    proposals::signers(&state.db.read().await?, &id).await
+    proposals::signers(&*state.db.read().await?, &id).await
 }
 
 #[server]
@@ -231,7 +231,7 @@ pub async fn dashboard_data() -> Result<Dashboard, AppError> {
     let state = context::state()?;
     let viewer = srv::viewer().await?;
     srv::advance(&state).await?;
-    proposals::dashboard(&state.db.read().await?, state.tz(), viewer.as_ref()).await
+    proposals::dashboard(&*state.db.read().await?, state.tz(), viewer.as_ref()).await
 }
 
 #[server]
@@ -242,7 +242,7 @@ pub async fn dashboard_data() -> Result<Dashboard, AppError> {
 pub async fn setup_history() -> Result<Vec<SetupVersionView>, AppError> {
     use crate::{application::setup, server::context};
     let state = context::state()?;
-    setup::history(&state.db.read().await?).await
+    setup::history(&*state.db.read().await?).await
 }
 
 /// `GET /propostas/{id}/exportar`: Markdown download of the published text + hash.

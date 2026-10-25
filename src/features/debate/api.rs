@@ -55,7 +55,7 @@ pub async fn get_debate(id: String, page: Option<u32>) -> Result<DebateView, App
     let viewer = srv::viewer().await?;
     srv::advance(&state).await?;
     app::thread(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &state.flags,
         state.now(),
         state.tz(),
@@ -110,7 +110,7 @@ pub async fn comment_history(comment_id: String) -> Result<Vec<Revision>, AppErr
     let state = context::state()?;
     let actor = context::require_actor().await?;
     app::history(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &state.flags,
         state.tz(),
         &actor,
@@ -173,7 +173,7 @@ pub async fn get_amendments(id: String) -> Result<AmendmentsView, AppError> {
     let viewer = srv::viewer().await?;
     srv::advance(&state).await?;
     app::amendments(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &state.flags,
         state.now(),
         state.tz(),
@@ -221,5 +221,5 @@ pub async fn moderation_queue() -> Result<Vec<ReportedComment>, AppError> {
     use crate::{application::debate as app, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    app::moderation_queue(&state.db.read().await?, &state.flags, state.tz(), &actor).await
+    app::moderation_queue(&*state.db.read().await?, &state.flags, state.tz(), &actor).await
 }

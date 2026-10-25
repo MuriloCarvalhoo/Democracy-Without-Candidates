@@ -772,7 +772,7 @@ async fn statistics_suppress_small_territorial_cells() {
     let id = w.urgent_in_voting(&author, "Enchente").await;
     w.vote(t0(), &author, &id, Choice::Yes).await.unwrap();
     voting::close_due_votes(&w.t.db, ends()).await.unwrap();
-    let s = statistics::statistics(&w.t.db.read().await.unwrap())
+    let s = statistics::statistics(&w.t.db.read().await.unwrap(), &Default::default())
         .await
         .unwrap();
     let sc = s
@@ -857,4 +857,77 @@ async fn debug_trace_of_cast_omits_choice_and_idempotency_key() {
     for secret in ["chave-idem-secreta-123", "abstain", "Abstain", "choice"] {
         assert!(!text.contains(secret), "{secret} leaked: {text}");
     }
+}
+
+/// The ballot counter (incremented in the cast transaction) equals the stored
+/// ballots after random casts, repeated voters, outsiders and concurrent casts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ballot_counter_matches_ballots_after_random_casts() {
+    let w = world(Some(quick())).await;
+    let author = w.citizen(BNU).await;
+    let mut voters = Vec::new();
+    for _ in 0..8 {
+        voters.push(w.citizen(BNU).await);
+    }
+    let id = w.urgent_in_voting(&author, "Contador").await;
+    let late = w.citizen(BNU).await; // registered after the snapshot
+    let counts = |id: String| {
+        let w = &w;
+        async move {
+            (
+                w.count(
+                    "SELECT COALESCE((SELECT ballots FROM ballot_counts WHERE proposal_id = ?1), 0)",
+                    &id,
+                )
+                .await,
+                w.count("SELECT COUNT(*) FROM ballots WHERE proposal_id = ?1", &id)
+                    .await,
+            )
+        }
+    };
+    let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+    for step in 0..30 {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        let who = if seed.is_multiple_of(7) {
+            &late
+        } else {
+            &voters[(seed >> 8) as usize % voters.len()]
+        };
+        let choice = Choice::ALL[(seed >> 32) as usize % Choice::ALL.len()];
+        let _ = w.vote(t0(), who, &id, choice).await;
+        let (stored, actual) = counts(id.clone()).await;
+        assert_eq!(stored, actual, "step {step}");
+    }
+    for v in voters.iter().chain([&author]) {
+        w.grant(t0(), v, REAUTH_VOTE, &id).await;
+    }
+    let tasks: Vec<_> = voters
+        .iter()
+        .chain([&author])
+        .cloned()
+        .map(|v| {
+            let (db, flags, id) = (w.t.db.clone(), w.flags.clone(), id.clone());
+            tokio::spawn(async move {
+                let ctx = Ctx {
+                    db: &db,
+                    flags: &flags,
+                    now: t0(),
+                    clock: None,
+                    tz: Sao_Paulo,
+                };
+                voting::cast(&ctx, &v, &id, Choice::Yes, true, None).await
+            })
+        })
+        .collect();
+    for task in tasks {
+        let _ = task.await.unwrap();
+    }
+    let (stored, actual) = counts(id.clone()).await;
+    assert_eq!((stored, actual), (9, 9), "every eligible voter once");
+    let integrity = voting::integrity(&w.t.db.read().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(integrity.counter_mismatch, 0);
 }

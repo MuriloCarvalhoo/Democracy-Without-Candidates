@@ -7,9 +7,10 @@ use chrono::Duration;
 use turso::Connection;
 
 use super::{
-    ClientKeys, Deps, FaceProof, attempt, audit_failure, check_totp, credentials,
-    face_not_confirmed, invalid_credentials, invalid_totp, ratelimit, record_totp_step,
-    recovery_code_hash, replace_recovery_codes, verify_face, verify_session_factors,
+    ClientKeys, Deps, FaceChallenge, FaceProof, attempt_deferred, audit_failure, check_totp,
+    credentials, face_not_confirmed, invalid_credentials, invalid_totp, match_face, ratelimit,
+    record_totp_step, recovery_code_hash, release_now, replace_recovery_codes,
+    verify_session_factors,
 };
 use crate::{
     application::{
@@ -229,7 +230,7 @@ pub async fn login_password(
     let normalized = normalize_email(email).unwrap_or_else(|| email.trim().to_lowercase());
     let keys = ClientKeys::new(&normalized, ip);
     let conn = deps.db.read().await?;
-    let account = attempt(deps, &keys, None, async {
+    let (account, reserved) = attempt_deferred(deps, &keys, None, None, async {
         let account = account_by_email(&conn, &normalized).await?;
         let ok = password_input.chars().count() <= 1024
             && password::verify(
@@ -243,6 +244,7 @@ pub async fn login_password(
     })
     .await?;
     if account.status == AccountStatus::Blocked {
+        release_now(deps, reserved).await?;
         return Err(AppError::Forbidden);
     }
     let face_enrolled = credentials(&conn, &account.id)
@@ -250,6 +252,7 @@ pub async fn login_password(
         .face_template
         .is_some();
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     let result = if face_enrolled {
         let token =
             new_challenge(&tx, deps, Purpose::Login, Some(&account.id), &keys, true).await?;
@@ -283,8 +286,13 @@ pub async fn auth_face(
     if purpose == Purpose::Login && !c.password_ok {
         return Err(step_expired());
     }
-    attempt(deps, &c.keys, c.user_id.as_deref(), async {
-        let ok = verify_face(deps, &auth_subject(token), c.user_id.as_deref(), &proof).await?;
+    let subject = auth_subject(token);
+    let face = FaceChallenge {
+        subject: &subject,
+        challenge: proof.challenge,
+    };
+    let ((), reserved) = attempt_deferred(deps, &c.keys, c.user_id.as_deref(), Some(face), async {
+        let ok = match_face(deps, c.user_id.as_deref(), &proof).await?;
         Ok(ok
             .then_some(())
             .ok_or_else(|| ("face", face_not_confirmed())))
@@ -297,6 +305,7 @@ pub async fn auth_face(
     let conn = deps.db.read().await?;
     let totp_confirmed = credentials(&conn, user_id).await?.totp_secret.is_some();
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     let outcome = if purpose == Purpose::Login && !totp_confirmed {
         consume_challenge(&tx, deps, &c.token_hash).await?;
         let token = start_session(&tx, deps, user_id, &c.keys, "password_face_pending").await?;
@@ -341,13 +350,14 @@ async fn ready_for_second_factor(
 }
 
 /// One counted TOTP attempt; parallel guesses within a challenge share the limit.
+/// The attempt is released in the caller's effect transaction.
 async fn totp_attempt(
     deps: &Deps<'_>,
     c: &Challenge,
     user_id: &str,
     code: &str,
-) -> Result<i64, AppError> {
-    attempt(deps, &c.keys, Some(user_id), async {
+) -> Result<(i64, ratelimit::Attempt), AppError> {
+    attempt_deferred(deps, &c.keys, Some(user_id), None, async {
         Ok(check_totp(deps, user_id, code)
             .await?
             .ok_or_else(|| ("totp", invalid_totp())))
@@ -364,8 +374,9 @@ pub async fn login_totp(
     code: &str,
 ) -> Result<String, AppError> {
     let (c, user_id) = ready_for_second_factor(deps, token, Purpose::Login, ip).await?;
-    let step = totp_attempt(deps, &c, &user_id, code).await?;
+    let (step, reserved) = totp_attempt(deps, &c, &user_id, code).await?;
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     record_totp_step(&tx, &user_id, step).await?;
     consume_challenge(&tx, deps, &c.token_hash).await?;
     let session = start_session(&tx, deps, &user_id, &c.keys, "totp").await?;
@@ -478,9 +489,10 @@ pub async fn reset_finish(
         return Err(AppError::validation("password", t("auth.password.policy")));
     }
     let (c, user_id) = ready_for_second_factor(deps, token, Purpose::PasswordReset, ip).await?;
-    let step = totp_attempt(deps, &c, &user_id, code).await?;
+    let (step, reserved) = totp_attempt(deps, &c, &user_id, code).await?;
     let hash = password::hash(new_password).await?;
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     record_totp_step(&tx, &user_id, step).await?;
     consume_challenge(&tx, deps, &c.token_hash).await?;
     tx.execute(
@@ -515,9 +527,11 @@ pub async fn change_password(
     if !password_acceptable(new_password) {
         return Err(AppError::validation("password", t("auth.password.policy")));
     }
-    let step = verify_session_factors(deps, &actor.user_id, Some(current), &proof, code).await?;
+    let (step, reserved) =
+        verify_session_factors(deps, &actor.user_id, Some(current), &proof, code).await?;
     let hash = password::hash(new_password).await?;
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
     tx.execute(
         "UPDATE users SET password_hash = ?2, updated_at = ?3 WHERE id = ?1",
@@ -549,9 +563,10 @@ pub async fn regenerate_recovery_codes(
     if actor.status != AccountStatus::Active {
         return Err(AppError::Forbidden);
     }
-    let step =
+    let (step, reserved) =
         verify_session_factors(deps, &actor.user_id, Some(password_input), &proof, code).await?;
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
     let codes = replace_recovery_codes(&tx, deps.now, &actor.user_id).await?;
     audit_event(
@@ -591,8 +606,9 @@ pub async fn reauthenticate(
     if actor.status != AccountStatus::Active {
         return Err(AppError::Forbidden);
     }
-    let step = verify_session_factors(deps, &actor.user_id, None, &proof, code).await?;
+    let (step, reserved) = verify_session_factors(deps, &actor.user_id, None, &proof, code).await?;
     let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
     let id = reauth::grant(&tx, deps.now, &actor.session_hash, action, resource).await?;
     // Action only: resource ids could link a reauthentication to a ballot.

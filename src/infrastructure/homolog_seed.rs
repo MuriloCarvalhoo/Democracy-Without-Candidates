@@ -409,7 +409,7 @@ async fn open_authors(
         .get(0)?;
         let token = session::create(&tx, now, policy, &id).await?;
         tx.commit().await?;
-        let actor = actor::load(&db.read().await?, &id, &session::token_hash(&token))
+        let actor = actor::load(&*db.read().await?, &id, &session::token_hash(&token))
             .await?
             .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         authors.push(Author {
@@ -470,7 +470,7 @@ async fn create(
     } else {
         &author.actor.country_id
     };
-    let params = setup::effective_setup(&env.db.read().await?, jurisdiction)
+    let params = setup::effective_setup(&*env.db.read().await?, jurisdiction)
         .await?
         .ok_or_else(|| AppError::Conflict("no adopted setup".into()))?
         .params;

@@ -121,7 +121,7 @@ pub fn ProfilePage() -> impl IntoView {
     let refresh = RwSignal::new(0u32);
     let profile = Resource::new(move || refresh.get(), |_| my_profile());
     view! {
-        <section class="page">
+        <section class="page medium">
             <h1>{t("profile.title")}</h1>
             <Transition fallback=|| view! { <p>{t("common.loading")}</p> }>
                 {move || profile.get().map(|p| match p {
@@ -208,7 +208,7 @@ fn ProfileDetails(p: ProfileView, refresh: RwSignal<u32>) -> impl IntoView {
 pub fn PrivacyPage() -> impl IntoView {
     let profile = Resource::new(|| (), |_| my_profile());
     view! {
-        <section class="page">
+        <section class="page medium">
             <h1>{t("profile.privacy.title")}</h1>
             <Transition fallback=|| view! { <p>{t("common.loading")}</p> }>
                 {move || profile.get().map(|p| match p {

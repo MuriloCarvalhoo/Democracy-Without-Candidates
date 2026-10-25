@@ -100,56 +100,64 @@ fn detail_view(d: ProposalDetail, a: Actions) -> impl IntoView {
     };
 
     view! {
-        <article class="page" data-testid="proposal-detail">
-            <h1 data-testid="proposal-title">{s.title.clone()}</h1>
-            <p class="row">
-                <StatusBadge status/>
-                <span class="badge">{t(s.kind.label_key())}</span>
-                <span class="badge">{t(s.level.label_key())}" · "{s.jurisdiction.clone()}</span>
-            </p>
-            {notice.map(|k| view! { <p class="notice" role="status">{t(k)}</p> })}
-            {d.archive_reason.clone().map(|r| view! { <p>{t("proposals.field.archive_reason")}": "{r}</p> })}
-            <p class="lead">{s.summary.clone()}</p>
-            {s.signature_target.map(|target| view! { <SignatureProgress count=s.signature_count target/> })}
-            {(!d.deadlines.is_empty()).then(|| view! {
-                <ul class="deadlines">
-                    {d.deadlines.iter().map(|dl| view! {
-                        <li>
-                            {t(match dl.phase {
-                                ProposalStatus::CollectingSignatures => "proposals.deadline.collect",
-                                ProposalStatus::InDebate => "proposals.deadline.debate",
-                                _ => "proposals.deadline.vote",
-                            })}": "{dl.at.clone()}
-                            {dl.passed.then(|| format!(" ({})", t("proposals.deadline.passed")))}
-                        </li>
-                    }).collect_view()}
-                </ul>
-                <p class="hint">{t("proposals.timezone_note")}</p>
-            })}
-            {super::vote_links(&id, status)}
-            {(s.kind == crate::domain::proposals::ProposalKind::SetupChange).then(|| view! {
-                <p><A href=format!("/metaleis/{id}")>{t("metalaws.diff_link")}</A></p>
-            })}
-            {viewer.clone().map(|v| actions_view(id.clone(), v, a))}
-            <h2>{t("proposals.field.body")}</h2>
-            <div class="proposal-body" data-testid="proposal-body">{d.body.clone()}</div>
-            {d.proposed_setup.map(|params| view! {
-                <h2>{t("proposals.proposed_setup")}</h2>
-                <SetupParamsTable params/>
-            })}
-            <dl>
-                <dt>{t("proposals.field.author")}</dt><dd>{d.author.clone()}</dd>
-                {d.published_at.clone().map(|at| view! { <dt>{t("proposals.field.published_at")}</dt><dd>{at}</dd> })}
-                {d.setup_version.map(|v| view! { <dt>{t("proposals.field.setup_version")}</dt><dd>{v}</dd> })}
-                {d.text_hash.clone().map(|h| view! { <dt>{t("proposals.field.text_hash")}</dt><dd><code>{h}</code></dd> })}
-            </dl>
-            {published.then(|| view! {
+        <article class="page proposal" data-testid="proposal-detail">
+            <header class="proposal-head">
+                <h1 data-testid="proposal-title">{s.title.clone()}</h1>
                 <p class="row">
-                    <A href=format!("/propostas/{id}/assinantes")>{t("proposals.action.signers")}</A>
-                    <a href=format!("/propostas/{id}/exportar") rel="external" download>{t("proposals.action.export")}</a>
-                    <A href=format!("/propostas/{id}/debate") attr:data-testid="debate-link">{t("debate.link")}</A>
+                    <StatusBadge status/>
+                    <span class="badge">{t(s.kind.label_key())}</span>
+                    <span class="badge">{t(s.level.label_key())}" · "{s.jurisdiction.clone()}</span>
                 </p>
-            })}
+                {notice.map(|k| view! { <p class="notice" role="status">{t(k)}</p> })}
+                {d.archive_reason.clone().map(|r| view! { <p>{t("proposals.field.archive_reason")}": "{r}</p> })}
+                <p class="lead">{s.summary.clone()}</p>
+            </header>
+            <div class="detail-layout">
+                <aside class="detail-side">
+                    {s.signature_target.map(|target| view! { <SignatureProgress count=s.signature_count target/> })}
+                    {(!d.deadlines.is_empty()).then(|| view! {
+                        <ul class="deadlines">
+                            {d.deadlines.iter().map(|dl| view! {
+                                <li class:passed=dl.passed>
+                                    {t(match dl.phase {
+                                        ProposalStatus::CollectingSignatures => "proposals.deadline.collect",
+                                        ProposalStatus::InDebate => "proposals.deadline.debate",
+                                        _ => "proposals.deadline.vote",
+                                    })}": "{dl.at.clone()}
+                                    {dl.passed.then(|| format!(" ({})", t("proposals.deadline.passed")))}
+                                </li>
+                            }).collect_view()}
+                        </ul>
+                        <p class="hint">{t("proposals.timezone_note")}</p>
+                    })}
+                    {super::vote_links(&id, status)}
+                    {(s.kind == crate::domain::proposals::ProposalKind::SetupChange).then(|| view! {
+                        <p><A href=format!("/metaleis/{id}")>{t("metalaws.diff_link")}</A></p>
+                    })}
+                    {viewer.clone().map(|v| actions_view(id.clone(), v, a))}
+                </aside>
+                <div class="detail-main">
+                    <h2>{t("proposals.field.body")}</h2>
+                    <div class="proposal-body" data-testid="proposal-body">{d.body.clone()}</div>
+                    {d.proposed_setup.map(|params| view! {
+                        <h2>{t("proposals.proposed_setup")}</h2>
+                        <SetupParamsTable params/>
+                    })}
+                    <dl class="facts">
+                        <dt>{t("proposals.field.author")}</dt><dd>{d.author.clone()}</dd>
+                        {d.published_at.clone().map(|at| view! { <dt>{t("proposals.field.published_at")}</dt><dd>{at}</dd> })}
+                        {d.setup_version.map(|v| view! { <dt>{t("proposals.field.setup_version")}</dt><dd>{v}</dd> })}
+                        {d.text_hash.clone().map(|h| view! { <dt>{t("proposals.field.text_hash")}</dt><dd><code>{h}</code></dd> })}
+                    </dl>
+                    {published.then(|| view! {
+                        <p class="row">
+                            <A href=format!("/propostas/{id}/assinantes")>{t("proposals.action.signers")}</A>
+                            <a href=format!("/propostas/{id}/exportar") rel="external" download>{t("proposals.action.export")}</a>
+                            <A href=format!("/propostas/{id}/debate") attr:data-testid="debate-link">{t("debate.link")}</A>
+                        </p>
+                    })}
+                </div>
+            </div>
         </article>
     }
 }

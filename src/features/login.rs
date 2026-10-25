@@ -243,7 +243,7 @@ pub fn LoginPage() -> impl IntoView {
     };
 
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("auth.login.title")}</h1>
             {move || match step.get() {
                 LoginStep::Credentials => view! {
@@ -330,7 +330,7 @@ pub fn ResetPasswordPage() -> impl IntoView {
     };
 
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("auth.reset.title")}</h1>
             <Show when=move || !done.get() fallback=|| view! {
                 <p class="notice success" role="status" data-testid="reset-done">{t("auth.reset.done")}</p>

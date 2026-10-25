@@ -5,6 +5,14 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         "app.skip_totp_banner" => "TOTP desativado (DWC_DEV_SKIP_TOTP): deixe o código em branco.",
         "nav.home" => "Início",
         "nav.main" => "Navegação principal",
+        "nav.account" => "Sua conta",
+        "footer.instance" => "Instância:",
+        "footer.online_only" => {
+            "Funciona somente online: nenhuma ação fica guardada para envio posterior."
+        }
+        "footer.transparency" => "Transparência",
+        "footer.audit" => "Auditoria pública",
+        "footer.setup_history" => "Histórico do setup",
         "common.loading" => "Carregando…",
         "common.retry" => "Tentar novamente",
         "common.empty" => "Nada por aqui ainda.",
@@ -32,6 +40,17 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         }
         "home.cta.proposals" => "Ver propostas",
         "home.cta.dashboard" => "Painel de participação",
+        "home.steps.title" => "Como uma proposta avança",
+        "home.step.propose" => "Proposta",
+        "home.step.propose_hint" => "Um cidadão cadastrado escreve o rascunho e publica.",
+        "home.step.collect" => "Assinaturas",
+        "home.step.collect_hint" => "Ao atingir a meta de assinaturas, a proposta avança.",
+        "home.step.debate" => "Debate",
+        "home.step.debate_hint" => "Comentários e emendas. Leis urgentes vão direto à votação.",
+        "home.step.vote" => "Votação",
+        "home.step.vote_hint" => "Sim, não ou abstenção, dentro do prazo.",
+        "home.step.result" => "Resultado",
+        "home.step.result_hint" => "Apurado com o quórum e a maioria do setup vigente.",
         "foundation.counter" => "Contador sintético persistido",
         "foundation.increment" => "Incrementar",
         "foundation.confirmed" => "Valor confirmado pelo servidor",

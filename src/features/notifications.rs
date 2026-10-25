@@ -112,8 +112,11 @@ pub fn NotificationsBadge() -> impl IntoView {
     view! {
         <Transition fallback=|| ()>
             {move || count.get().and_then(|r| r.ok()).flatten().map(|n| view! {
-                <A href="/notificacoes" attr:data-testid="nav-notifications">
-                    {t("nav.notifications")}
+                <A href="/notificacoes" attr:class="nav-notifications" attr:data-testid="nav-notifications">
+                    <svg class="icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                        <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="nav-label">{t("nav.notifications")}</span>
                     {(n > 0).then(|| view! {
                         " "<span class="badge" data-testid="nav-unread">
                             {n}<span class="visually-hidden">" "{t("notifications.unread")}</span>
@@ -169,7 +172,8 @@ pub fn NotificationsPage() -> impl IntoView {
                                     <li class="card" data-read=n.read.to_string()>
                                         <strong>{n.title.clone()}</strong>
                                         <p>{n.body.clone()}</p>
-                                        <p class="row">
+                                        // <div>, not <p>: a <form> inside <p> is invalid HTML and breaks hydration.
+                                        <div class="row">
                                             <small>{format_instant(&n.created_at)}</small>
                                             {n.link.clone().map(|href| view! { <A href=href>{t("notifications.open")}</A> })}
                                             {if n.read {
@@ -182,7 +186,7 @@ pub fn NotificationsPage() -> impl IntoView {
                                                     </ActionForm>
                                                 }.into_any()
                                             }}
-                                        </p>
+                                        </div>
                                     </li>
                                 }).collect_view()}
                             </ul>

@@ -95,8 +95,11 @@ pub fn Layout(children: Children) -> impl IntoView {
     view! {
         <a class="skip" href="#conteudo">"Pular para o conteúdo"</a>
         <header class="site-header">
-            <A href="/" attr:class="brand">{t("app.name")}</A>
-            <nav aria-label=t("nav.main")>
+            <A href="/" attr:class="brand">
+                <img src="/icon.svg" alt="" width="32" height="32"/>
+                <span>{t("app.name")}</span>
+            </A>
+            <nav class="primary-nav" aria-label=t("nav.main")>
                 <A href="/">{t("nav.home")}</A>
                 <A href="/propostas">{t("nav.proposals")}</A>
                 <A href="/dashboard">{t("nav.dashboard")}</A>
@@ -104,23 +107,25 @@ pub fn Layout(children: Children) -> impl IntoView {
                 <A href="/setup">{t("nav.setup_history")}</A>
                 <A href="/estatisticas">{t("nav.statistics")}</A>
                 <A href="/auditoria">{t("nav.audit")}</A>
+                <Transition fallback=|| ()>
+                    {move || info.get().and_then(|r| r.ok()).and_then(|i| i.viewer).filter(|v| v.is_admin).map(|_| view! {
+                        <A href="/admin">{t("nav.admin")}</A>
+                    })}
+                </Transition>
+            </nav>
+            <nav class="account-nav" aria-label=t("nav.account")>
                 <NotificationsBadge/>
                 <Transition fallback=|| ()>
                     {move || info.get().map(|r| match r.ok().and_then(|i| i.viewer) {
                         None => view! {
                             <A href="/login" attr:data-testid="nav-login">{t("nav.login")}</A>
-                            <A href="/cadastro" attr:data-testid="nav-register">{t("nav.register")}</A>
+                            <A href="/cadastro" attr:class="nav-cta" attr:data-testid="nav-register">{t("nav.register")}</A>
                         }.into_any(),
                         Some(v) => view! {
-                            {v.pending.then(|| view! { <A href="/cadastro/biometria">{t("nav.finish")}</A> })}
+                            {v.pending.then(|| view! { <A href="/cadastro/biometria" attr:class="nav-cta">{t("nav.finish")}</A> })}
                             <A href="/perfil" attr:data-testid="nav-profile">{t("nav.profile")}</A>
                             <button type="button" class="link" data-testid="nav-logout" on:click=sign_out>{t("nav.logout")}</button>
                         }.into_any(),
-                    })}
-                </Transition>
-                <Transition fallback=|| ()>
-                    {move || info.get().and_then(|r| r.ok()).and_then(|i| i.viewer).filter(|v| v.is_admin).map(|_| view! {
-                        <A href="/admin">{t("nav.admin")}</A>
                     })}
                 </Transition>
             </nav>
@@ -130,7 +135,7 @@ pub fn Layout(children: Children) -> impl IntoView {
             {move || info.get().and_then(|r| r.ok()).filter(|i| i.synthetic).map(|i| view! {
                 <p class="banner" role="note">{t("app.synthetic_banner")}</p>
                 {i.skip_totp.then(|| view! {
-                    <p class="banner" role="note" data-testid="skip-totp-banner">{t("app.skip_totp_banner")}</p>
+                    <p class="banner security" role="note" data-testid="skip-totp-banner">{t("app.skip_totp_banner")}</p>
                 })}
             })}
         </Transition>
@@ -138,5 +143,23 @@ pub fn Layout(children: Children) -> impl IntoView {
             <p class="banner offline" role="alert">{t("common.offline")}</p>
         </Show>
         <main id="conteudo" data-hydrated=move || hydrated.get().then_some("true")>{children()}</main>
+        <footer class="site-footer">
+            <div class="footer-inner">
+                <p class="footer-brand">
+                    <strong>{t("app.name")}</strong>
+                    <Transition fallback=|| ()>
+                        {move || info.get().and_then(|r| r.ok()).map(|i| view! {
+                            <span class="hint">{t("footer.instance")}" "{i.country}</span>
+                        })}
+                    </Transition>
+                </p>
+                <p class="hint">{t("footer.online_only")}</p>
+                <nav aria-label=t("footer.transparency")>
+                    <A href="/auditoria">{t("footer.audit")}</A>
+                    <A href="/estatisticas">{t("nav.statistics")}</A>
+                    <A href="/setup/historico">{t("footer.setup_history")}</A>
+                </nav>
+            </div>
+        </footer>
     }
 }

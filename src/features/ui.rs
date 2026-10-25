@@ -11,7 +11,7 @@ pub fn ErrorNotice(error: AppError) -> impl IntoView {
 
 #[component]
 pub fn Loading() -> impl IntoView {
-    view! { <p class="notice" aria-live="polite">{t("common.loading")}</p> }
+    view! { <p class="notice loading" aria-live="polite">{t("common.loading")}</p> }
 }
 
 #[component]

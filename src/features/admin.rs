@@ -56,7 +56,7 @@ pub async fn revoke_auditor_role(email: String) -> Result<(), AppError> {
 pub(crate) fn AdminNav() -> impl IntoView {
     view! {
         <nav class="row" aria-label=t("admin.nav")>
-            <A href="/admin">{t("admin.nav.instance")}</A>
+            <A href="/admin" exact=true>{t("admin.nav.instance")}</A>
             <A href="/admin/auditores">{t("admin.nav.auditors")}</A>
             <A href="/admin/moderacao">{t("debate.queue.nav")}</A>
         </nav>

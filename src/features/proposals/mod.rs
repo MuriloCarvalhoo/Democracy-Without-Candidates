@@ -68,7 +68,7 @@ fn ProposalCard(p: ProposalSummary) -> impl IntoView {
     let href = format!("/propostas/{}", p.id);
     let collecting = p.status == ProposalStatus::CollectingSignatures;
     view! {
-        <li class="card" data-testid="proposal-item">
+        <li class="card proposal-card" data-testid="proposal-item">
             <h3><A href=href>{p.title.clone()}</A></h3>
             <p class="row">
                 <StatusBadge status=p.status/>
@@ -111,7 +111,7 @@ pub(crate) fn summary_list(items: Vec<ProposalSummary>, empty: &'static str) -> 
         view! { <Empty message=empty/> }.into_any()
     } else {
         view! {
-            <ul class="list">
+            <ul class="list proposal-list">
                 {items.into_iter().map(|p| view! { <ProposalCard p/> }).collect_view()}
             </ul>
         }

@@ -122,7 +122,7 @@ pub fn ChangePasswordPage() -> impl IntoView {
         });
     };
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("account.password.title")}</h1>
             <p>{t("account.password.hint")}</p>
             <form on:submit=submit>
@@ -168,7 +168,7 @@ pub fn RecoveryCodesPage() -> impl IntoView {
         });
     };
     view! {
-        <section class="page">
+        <section class="page narrow">
             <h1>{t("account.codes.title")}</h1>
             <Show when=move || codes.get().is_none() fallback=move || view! {
                 <RecoveryCodes codes=codes.get().unwrap_or_default()/>

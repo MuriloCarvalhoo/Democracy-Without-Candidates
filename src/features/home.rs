@@ -51,6 +51,23 @@ pub async fn increment_counter() -> Result<i64, AppError> {
     Ok(value)
 }
 
+/// Proposal lifecycle shown on the landing page: (phase class, title key, hint key).
+const LIFECYCLE: [(&str, &str, &str); 5] = [
+    (
+        "step-propose",
+        "home.step.propose",
+        "home.step.propose_hint",
+    ),
+    (
+        "step-collect",
+        "home.step.collect",
+        "home.step.collect_hint",
+    ),
+    ("step-debate", "home.step.debate", "home.step.debate_hint"),
+    ("step-vote", "home.step.vote", "home.step.vote_hint"),
+    ("step-result", "home.step.result", "home.step.result_hint"),
+];
+
 #[component]
 pub fn HomePage() -> impl IntoView {
     let increment = ServerAction::<IncrementCounter>::new();
@@ -59,13 +76,26 @@ pub fn HomePage() -> impl IntoView {
     let synthetic = move || info.get().and_then(|r| r.ok()).is_some_and(|i| i.synthetic);
 
     view! {
-        <section class="page hero">
-            <h1>{t("home.title")}</h1>
-            <p class="lead">{t("home.lead")}</p>
-            <p class="row">
-                <a class="button" href="/propostas">{t("home.cta.proposals")}</a>
-                <a class="button secondary" href="/dashboard">{t("home.cta.dashboard")}</a>
-            </p>
+        <section class="page hero" aria-labelledby="home-title">
+            <div class="hero-text">
+                <h1 id="home-title">{t("home.title")}</h1>
+                <p class="lead">{t("home.lead")}</p>
+                <p class="row">
+                    <a class="button" href="/propostas">{t("home.cta.proposals")}</a>
+                    <a class="button secondary" href="/dashboard">{t("home.cta.dashboard")}</a>
+                </p>
+            </div>
+            <div class="lifecycle-wrap">
+                <h2 class="lifecycle-title">{t("home.steps.title")}</h2>
+                <ol class="lifecycle" data-testid="lifecycle">
+                    {LIFECYCLE.iter().map(|&(phase, title, hint)| view! {
+                        <li class=phase>
+                            <strong>{t(title)}</strong>
+                            <span>{t(hint)}</span>
+                        </li>
+                    }).collect_view()}
+                </ol>
+            </div>
         </section>
         // Foundation probe: only in development/test instances.
         <Transition fallback=|| ()>

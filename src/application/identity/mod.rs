@@ -69,6 +69,7 @@ pub fn user_subject(user_id: &str) -> String {
 }
 
 /// Issues a face challenge for `subject` (a user or an authentication flow).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn issue_face_challenge(
     db: &Db,
     now: DateTime<Utc>,
@@ -355,7 +356,8 @@ async fn replace_recovery_codes(
     let mut codes = Vec::with_capacity(RECOVERY_CODES);
     for _ in 0..RECOVERY_CODES {
         let code = new_recovery_code();
-        let hash = recovery_code_hash(&code).ok_or(AppError::Internal)?;
+        let hash = recovery_code_hash(&code)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         conn.execute(
             "INSERT INTO recovery_codes (code_hash, user_id, created_at) VALUES (?1, ?2, ?3)",
             (hash, user_id, ts(now)),

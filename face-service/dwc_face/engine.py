@@ -11,6 +11,8 @@ from io import BytesIO
 import numpy as np
 from PIL import Image
 
+from .trace import trace
+
 DIMENSION = 512
 MAX_PIXELS = 4096 * 4096
 ACCEPTED_FORMATS = ("JPEG", "PNG")
@@ -24,6 +26,7 @@ class Unusable(Exception):
         self.reason = reason
 
 
+@trace
 def decode_image(data: bytes) -> np.ndarray:
     """Decodes JPEG/PNG bytes into an RGB array, entirely in memory."""
     try:
@@ -38,6 +41,7 @@ def decode_image(data: bytes) -> np.ndarray:
         raise Unusable("invalid_image") from exc
 
 
+@trace
 class FakeEngine:
     """Test-only engine. Rules on the top-left pixel: black = no face,
     pure red = multiple faces; otherwise an embedding derived from a hash of the
@@ -62,6 +66,7 @@ class FakeEngine:
         return [float(x) for x in raw / 32767.5 - 1.0]
 
 
+@trace
 class DeepFaceEngine:
     name = "deepface"
     dimension = DIMENSION
@@ -104,6 +109,7 @@ class DeepFaceEngine:
         return [float(x) for x in embedding]
 
 
+@trace
 def build(name: str):
     if name == "fake":
         return FakeEngine()

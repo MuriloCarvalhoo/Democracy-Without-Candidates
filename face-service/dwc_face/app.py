@@ -19,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 
 from .engine import Unusable, decode_image
 from .settings import Settings
+from .trace import trace
 
 KEY_HEADER = "X-DWC-Face-Key"
 MAX_CHALLENGE_LEN = 128
@@ -35,6 +36,7 @@ class Busy(Exception):
     pass
 
 
+@trace
 def cosine_distance(a: list[float], b: list[float]) -> float:
     va, vb = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
     na, nb = np.linalg.norm(va), np.linalg.norm(vb)
@@ -112,6 +114,7 @@ def create_app(settings: Settings, engine) -> Flask:
             raise BadRequest("embedding must contain finite numbers")
         return [float(x) for x in value]
 
+    @trace
     def run_engine(image: bytes) -> list[float]:
         if not slots.acquire(timeout=settings.queue_timeout_secs):
             raise Busy()
@@ -130,10 +133,12 @@ def create_app(settings: Settings, engine) -> Flask:
         )
 
     @app.get("/healthz")
+    @trace
     def healthz():
         return jsonify(status="ok", engine=engine.name, liveness=LIVENESS)
 
     @app.post("/v1/embed")
+    @trace
     def embed():
         data = body()
         challenge = challenge_of(data)
@@ -147,6 +152,7 @@ def create_app(settings: Settings, engine) -> Flask:
         return jsonify(status="ok", embedding=embedding, challenge=challenge, liveness=LIVENESS)
 
     @app.post("/v1/compare")
+    @trace
     def compare():
         data = body()
         challenge = challenge_of(data)

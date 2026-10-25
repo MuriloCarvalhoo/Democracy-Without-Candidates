@@ -77,10 +77,35 @@ impl FromServerFnError for AppError {
 }
 
 #[cfg(feature = "ssr")]
-impl From<turso::Error> for AppError {
-    fn from(error: turso::Error) -> Self {
-        tracing::error!(%error, "database error");
+impl AppError {
+    /// `Internal` with its cause and call site logged server-side (inside the
+    /// request span, so with request id and path). The browser only sees the
+    /// generic message. Never pass secrets or personal data as the cause.
+    #[track_caller]
+    pub fn internal(cause: impl std::fmt::Display) -> Self {
+        let at = std::panic::Location::caller();
+        tracing::error!(%cause, %at, "internal error");
         Self::Internal
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl From<turso::Error> for AppError {
+    /// Logged with the `?` call site. Lock contention that outlived the busy
+    /// timeout becomes a retryable `Unavailable` instead of a generic failure.
+    #[track_caller]
+    fn from(error: turso::Error) -> Self {
+        let at = std::panic::Location::caller();
+        match error {
+            turso::Error::Busy(_) | turso::Error::BusySnapshot(_) => {
+                tracing::warn!(%error, %at, "database busy");
+                Self::Unavailable(t("error.busy").into())
+            }
+            _ => {
+                tracing::error!(%error, %at, "database error");
+                Self::Internal
+            }
+        }
     }
 }
 

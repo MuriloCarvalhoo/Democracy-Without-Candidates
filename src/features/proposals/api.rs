@@ -51,6 +51,7 @@ pub(crate) mod srv {
 }
 
 #[server(endpoint = "proposals/list")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(kind = ?kind, status = ?status, level = ?level, page = ?page), err(level = "debug")))]
 pub async fn list_proposals(
     kind: Option<String>,
     status: Option<String>,
@@ -67,6 +68,7 @@ pub async fn list_proposals(
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn get_proposal(id: String) -> Result<ProposalDetail, AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
@@ -92,6 +94,7 @@ pub async fn get_proposal(id: String) -> Result<ProposalDetail, AppError> {
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn get_draft(id: String) -> Result<Draft, AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
@@ -103,6 +106,10 @@ pub async fn get_draft(id: String) -> Result<Draft, AppError> {
 /// Effective setup parameters for the caller's municipality, or `None` when no
 /// setup was adopted (laws blocked). Prefills meta-law drafts.
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn setup_defaults() -> Result<Option<SetupParams>, AppError> {
     use crate::{application::setup, server::context};
     let state = context::state()?;
@@ -114,6 +121,7 @@ pub async fn setup_defaults() -> Result<Option<SetupParams>, AppError> {
 }
 
 #[server(input = Json, endpoint = "proposals/save_draft")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = ?id), err(level = "debug")))]
 pub async fn save_draft(id: Option<String>, input: DraftInput) -> Result<DraftSaved, AppError> {
     use crate::{application::proposals, server::context};
     if let Some(id) = &id {
@@ -125,6 +133,7 @@ pub async fn save_draft(id: Option<String>, input: DraftInput) -> Result<DraftSa
 }
 
 #[server(endpoint = "proposals/publish")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn publish_proposal(
     id: String,
     idempotency_key: Option<String>,
@@ -143,6 +152,7 @@ pub async fn publish_proposal(
 }
 
 #[server(endpoint = "proposals/sign")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn sign_proposal(
     id: String,
     idempotency_key: Option<String>,
@@ -162,6 +172,7 @@ pub async fn sign_proposal(
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn unsign_proposal(
     id: String,
     idempotency_key: Option<String>,
@@ -181,6 +192,7 @@ pub async fn unsign_proposal(
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn withdraw_proposal(id: String, reason: String) -> Result<(), AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
@@ -191,6 +203,7 @@ pub async fn withdraw_proposal(id: String, reason: String) -> Result<(), AppErro
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn archive_proposal(id: String, reason: String) -> Result<(), AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
@@ -200,6 +213,7 @@ pub async fn archive_proposal(id: String, reason: String) -> Result<(), AppError
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn proposal_signers(id: String) -> Result<Signers, AppError> {
     use crate::{application::proposals, server::context};
     srv::check_id(&id)?;
@@ -208,6 +222,10 @@ pub async fn proposal_signers(id: String) -> Result<Signers, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn dashboard_data() -> Result<Dashboard, AppError> {
     use crate::{application::proposals, server::context};
     let state = context::state()?;
@@ -217,6 +235,10 @@ pub async fn dashboard_data() -> Result<Dashboard, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn setup_history() -> Result<Vec<SetupVersionView>, AppError> {
     use crate::{application::setup, server::context};
     let state = context::state()?;

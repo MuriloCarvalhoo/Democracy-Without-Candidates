@@ -15,6 +15,7 @@ use crate::{
     infrastructure::db::query_all,
 };
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn statistics(conn: &Connection) -> Result<Statistics, AppError> {
     let mut by_status = Vec::new();
     for row in query_all(
@@ -24,7 +25,8 @@ pub async fn statistics(conn: &Connection) -> Result<Statistics, AppError> {
     )
     .await?
     {
-        let status = ProposalStatus::from_db(&row.get::<String>(0)?).ok_or(AppError::Internal)?;
+        let status = ProposalStatus::from_db(&row.get::<String>(0)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         by_status.push((status, row.get::<u64>(1)?));
     }
     by_status.sort_by_key(|(s, _)| ProposalStatus::ALL.iter().position(|x| x == s));
@@ -36,7 +38,8 @@ pub async fn statistics(conn: &Connection) -> Result<Statistics, AppError> {
     )
     .await?
     {
-        let kind = ProposalKind::from_db(&row.get::<String>(0)?).ok_or(AppError::Internal)?;
+        let kind = ProposalKind::from_db(&row.get::<String>(0)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         by_kind.push((kind, row.get::<u64>(1)?));
     }
     by_kind.sort_by_key(|(k, _)| ProposalKind::ALL.iter().position(|x| x == k));
@@ -53,7 +56,8 @@ pub async fn statistics(conn: &Connection) -> Result<Statistics, AppError> {
         closed_votes.push(ClosedVoteStat {
             id: row.get(0)?,
             title: row.get(1)?,
-            status: ProposalStatus::from_db(&row.get::<String>(2)?).ok_or(AppError::Internal)?,
+            status: ProposalStatus::from_db(&row.get::<String>(2)?)
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
             electorate: row.get(3)?,
             participation: row.get(4)?,
         });

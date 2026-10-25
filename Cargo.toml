@@ -40,6 +40,12 @@ web-sys = { version = "0.3", optional = true, features = [
     "HtmlCanvasElement",
     "CanvasRenderingContext2d",
     "DomException",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Node",
+    "ErrorEvent",
+    "PromiseRejectionEvent",
 ] }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }
@@ -50,7 +56,7 @@ axum = { version = "0.8.9", optional = true }
 leptos_axum = { version = "0.8.10", optional = true }
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "signal", "time", "sync"], optional = true }
 tower = { version = "0.5", optional = true }
-tower-http = { version = "0.6", features = ["limit"], optional = true }
+tower-http = { version = "0.6", features = ["limit", "trace", "request-id", "catch-panic", "util"], optional = true }
 turso = { version = "0.8.3", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"], optional = true }
 chrono-tz = { version = "0.10.4", optional = true }
@@ -71,6 +77,7 @@ chacha20poly1305 = { version = "0.11", optional = true }
 tempfile = "3"
 fantoccini = { version = "0.22.1", default-features = false, features = ["rustls-tls"] }
 proptest = "1.11"
+url = "2"
 
 [features]
 hydrate = [
@@ -167,4 +174,8 @@ required-features = ["ssr"]
 
 [[test]]
 name = "e2e_voting"
+required-features = ["ssr"]
+
+[[test]]
+name = "e2e_resilience"
 required-features = ["ssr"]

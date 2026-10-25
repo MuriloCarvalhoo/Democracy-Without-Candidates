@@ -19,10 +19,10 @@ pub async fn hash(password: &str) -> Result<String, AppError> {
         argon2()
             .hash_password(password.as_bytes())
             .map(|h| h.to_string())
-            .map_err(|_| AppError::Internal)
+            .map_err(AppError::internal)
     })
     .await
-    .map_err(|_| AppError::Internal)?
+    .map_err(AppError::internal)?
 }
 
 /// Verifies against a stored PHC string. `None` runs a dummy verification so that

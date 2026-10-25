@@ -18,6 +18,10 @@ doctor:
 dev: doctor
     {{dev_env}} cargo leptos watch
 
+# Same as `dev` with DWC_DEBUG=1: instrumented functions log entry/exit and safe inputs.
+dev-debug: doctor
+    {{dev_env}} DWC_DEBUG=1 cargo leptos watch
+
 # Enable synthetic development fixtures (flags, demo accounts) in data/dev.db.
 dev-seed:
     cargo leptos build

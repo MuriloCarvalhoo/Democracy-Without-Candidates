@@ -26,6 +26,7 @@ pub struct Notice<'a> {
 
 /// Stores the notice unless the user disabled its category. Call inside the
 /// write transaction of the effect that caused it.
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn notify(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -61,6 +62,7 @@ async fn deliver(
     Ok(true)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn unread_count(conn: &Connection, user_id: &str) -> Result<i64, AppError> {
     Ok(query_opt(
         conn,
@@ -74,6 +76,7 @@ pub async fn unread_count(conn: &Connection, user_id: &str) -> Result<i64, AppEr
 }
 
 /// Newest-first page (0-based) of the user's own notifications.
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, page = %page), err(level = "debug"))]
 pub async fn list(
     conn: &Connection,
     user_id: &str,
@@ -115,6 +118,7 @@ pub async fn list(
 
 /// Marks one of the user's notifications as read. Another user's (or an unknown)
 /// id is `NotFound`, without revealing whether it exists.
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, id = %id), err(level = "debug"))]
 pub async fn mark_read(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -136,6 +140,7 @@ pub async fn mark_read(
     .ok_or(AppError::NotFound)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn mark_all_read(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -150,6 +155,7 @@ pub async fn mark_all_read(
 }
 
 /// Every category with its in-app state (absent row = enabled).
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn preferences(conn: &Connection, user_id: &str) -> Result<Vec<Preference>, AppError> {
     let disabled: Vec<String> = query_all(
         conn,
@@ -169,6 +175,7 @@ pub async fn preferences(conn: &Connection, user_id: &str) -> Result<Vec<Prefere
         .collect())
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, category = ?category, in_app = %in_app), err(level = "debug"))]
 pub async fn set_preference(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -197,6 +204,7 @@ pub enum Audience<'a> {
 /// Schedules a notice for `due_at` (e.g. a deadline reminder). Idempotent by
 /// `dedupe_key`: returns false when that key was already scheduled. Call inside
 /// the transaction that sets the deadline.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn schedule(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -231,6 +239,7 @@ pub async fn schedule(
 }
 
 /// Drops a not yet delivered scheduled notice (e.g. deadline moved/cancelled).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn cancel_scheduled(conn: &Connection, dedupe_key: &str) -> Result<bool, AppError> {
     Ok(conn
         .execute(
@@ -243,6 +252,7 @@ pub async fn cancel_scheduled(conn: &Connection, dedupe_key: &str) -> Result<boo
 
 /// Delivers every scheduled notice due at `now`, once each (one transaction per
 /// scheduled row). Returns the number of notifications stored. Run periodically.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn remind_due(db: &Db, now: DateTime<Utc>) -> Result<u64, AppError> {
     let due = query_all(
         &db.read().await?,

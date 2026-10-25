@@ -55,7 +55,7 @@ impl SecretBox {
                     aad: aad.as_bytes(),
                 },
             )
-            .map_err(|_| AppError::Internal)?;
+            .map_err(AppError::internal)?;
         let mut out = Vec::with_capacity(1 + NONCE_LEN + ct.len());
         out.push(VERSION);
         out.extend_from_slice(&nonce);
@@ -65,9 +65,9 @@ impl SecretBox {
 
     pub fn open(&self, sealed: &[u8], aad: &str) -> Result<Vec<u8>, AppError> {
         if sealed.len() < 1 + NONCE_LEN || sealed[0] != VERSION {
-            return Err(AppError::Internal);
+            return Err(AppError::internal("sealed secret has an unknown format"));
         }
-        let nonce = XNonce::try_from(&sealed[1..1 + NONCE_LEN]).map_err(|_| AppError::Internal)?;
+        let nonce = XNonce::try_from(&sealed[1..1 + NONCE_LEN]).map_err(AppError::internal)?;
         self.cipher
             .decrypt(
                 &nonce,

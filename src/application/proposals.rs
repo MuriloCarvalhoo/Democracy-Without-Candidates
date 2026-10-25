@@ -92,8 +92,10 @@ const ROW_COLUMNS: &str = "id, kind, status, jurisdiction_id, author_id, title, 
 fn row_from(row: &Row) -> Result<ProposalRow, AppError> {
     Ok(ProposalRow {
         id: row.get(0)?,
-        kind: ProposalKind::from_db(&row.get::<String>(1)?).ok_or(AppError::Internal)?,
-        status: ProposalStatus::from_db(&row.get::<String>(2)?).ok_or(AppError::Internal)?,
+        kind: ProposalKind::from_db(&row.get::<String>(1)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
+        status: ProposalStatus::from_db(&row.get::<String>(2)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
         jurisdiction_id: row.get(3)?,
         author_id: row.get(4)?,
         title: row.get(5)?,
@@ -115,6 +117,7 @@ fn row_from(row: &Row) -> Result<ProposalRow, AppError> {
     })
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn load(conn: &Connection, id: &str) -> Result<Option<ProposalRow>, AppError> {
     match query_opt(
         conn,
@@ -128,6 +131,7 @@ pub async fn load(conn: &Connection, id: &str) -> Result<Option<ProposalRow>, Ap
     }
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(jurisdiction_id = %jurisdiction_id), err(level = "debug"))]
 pub async fn level_of(conn: &Connection, jurisdiction_id: &str) -> Result<Level, AppError> {
     let kind: String = query_opt(
         conn,
@@ -137,10 +141,11 @@ pub async fn level_of(conn: &Connection, jurisdiction_id: &str) -> Result<Level,
     .await?
     .ok_or(AppError::NotFound)?
     .get(0)?;
-    Level::from_db(&kind).ok_or(AppError::Internal)
+    Level::from_db(&kind).ok_or_else(|| AppError::internal("missing or invalid stored value"))
 }
 
 /// "Blumenau/SC", "Santa Catarina", "Brasil".
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn jurisdiction_label(conn: &Connection, id: &str) -> Result<String, AppError> {
     let row = query_opt(
         conn,
@@ -223,7 +228,8 @@ async fn duplicates(
             Ok(DuplicateHit {
                 id: r.get(0)?,
                 title: r.get(1)?,
-                status: ProposalStatus::from_db(&r.get::<String>(2)?).ok_or(AppError::Internal)?,
+                status: ProposalStatus::from_db(&r.get::<String>(2)?)
+                    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
             })
         })
         .collect()
@@ -232,6 +238,7 @@ async fn duplicates(
 /// Creates (`id = None`) or updates the author's draft. Laws require an adopted
 /// setup for the jurisdiction; `setup_change` carries a proposed parameter package.
 /// Returns duplicate warnings (never blocking).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = ?id), err(level = "debug"))]
 pub async fn save_draft(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -328,6 +335,7 @@ pub async fn save_draft(
 }
 
 /// Draft fields for the author's edit form.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn get_draft(conn: &Connection, actor: &Actor, id: &str) -> Result<Draft, AppError> {
     let p = load(conn, id).await?.ok_or(AppError::NotFound)?;
     if p.author_id != actor.user_id {
@@ -354,6 +362,7 @@ pub async fn get_draft(conn: &Connection, actor: &Actor, id: &str) -> Result<Dra
 /// Publishes a draft: opens signature collection with the effective setup, an
 /// electorate snapshot and the signature target. Consumes the `proposal:create`
 /// reauth grant and the yearly quota in the same transaction.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn publish(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -396,7 +405,7 @@ pub async fn publish(
             (actor.user_id.as_str(), p.kind.as_db(), year),
         )
         .await?
-        .ok_or(AppError::Internal)?
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
         .get(0)?;
         if used >= limit {
             return Err(AppError::Conflict(t("proposals.error.quota").into()));
@@ -414,7 +423,9 @@ pub async fn publish(
     .await?;
     let level = level_of(&tx, &p.jurisdiction_id).await?;
     let target = min_count(setup.params.signature_bp(level), electorate).max(1);
-    let collect_days = rules.collect_days.ok_or(AppError::Internal)?;
+    let collect_days = rules
+        .collect_days
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let collect_ends_at = ts(ctx.now + chrono::Duration::days(collect_days.into()));
     let hash = text_hash(&p.title, &p.summary, &p.body);
     let quota_year = rules.quota_per_year.map(|_| year);
@@ -487,6 +498,7 @@ pub async fn publish(
 
 /// Author withdrawal of a draft or a proposal in collection; ends in `archived`.
 /// The consumed quota is not refunded.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn withdraw(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -524,6 +536,7 @@ pub async fn withdraw(
 }
 
 /// Administrative archiving, only from terminal phases; history is preserved.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn archive(ctx: &Ctx<'_>, actor: &Actor, id: &str, reason: &str) -> Result<(), AppError> {
     actor.require(Permission::ProposalArchive)?;
     let reason = clean_reason(reason)?;
@@ -601,7 +614,8 @@ const SUMMARY_SQL: &str =
     FROM proposals p JOIN jurisdictions j ON j.id = p.jurisdiction_id";
 
 fn summary_from(row: &Row, tz: Tz) -> Result<ProposalSummary, AppError> {
-    let status = ProposalStatus::from_db(&row.get::<String>(2)?).ok_or(AppError::Internal)?;
+    let status = ProposalStatus::from_db(&row.get::<String>(2)?)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let jkind: String = row.get(3)?;
     let deadline_col = match status {
         ProposalStatus::CollectingSignatures => Some(10),
@@ -615,9 +629,11 @@ fn summary_from(row: &Row, tz: Tz) -> Result<ProposalSummary, AppError> {
     };
     Ok(ProposalSummary {
         id: row.get(0)?,
-        kind: ProposalKind::from_db(&row.get::<String>(1)?).ok_or(AppError::Internal)?,
+        kind: ProposalKind::from_db(&row.get::<String>(1)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
         status,
-        level: Level::from_db(&jkind).ok_or(AppError::Internal)?,
+        level: Level::from_db(&jkind)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
         jurisdiction: label(&jkind, row.get(4)?, row.get(5)?),
         title: row.get(6)?,
         summary: row.get(7)?,
@@ -641,6 +657,7 @@ pub(crate) async fn summaries(
 }
 
 /// Public summary of one published proposal (drafts read as not found).
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn summary_of(conn: &Connection, tz: Tz, id: &str) -> Result<ProposalSummary, AppError> {
     summaries(
         conn,
@@ -695,6 +712,7 @@ impl ListFilter {
 }
 
 /// Public paginated listing. Drafts are never listed; archived only on request.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn list(
     conn: &Connection,
     tz: Tz,
@@ -724,7 +742,7 @@ pub async fn list(
         params.clone(),
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     let pages = total.div_ceil(u64::from(PAGE_SIZE)).max(1) as u32;
     let page = filter.page.clamp(1, pages);
@@ -764,6 +782,7 @@ async fn has_active_signature(
     .is_some())
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(snapshot_id = %snapshot_id, user_id = %user_id), err(level = "debug"))]
 pub async fn in_snapshot(
     conn: &Connection,
     snapshot_id: &str,
@@ -779,6 +798,7 @@ pub async fn in_snapshot(
 }
 
 /// Public detail; drafts are visible to their author only.
+#[tracing::instrument(level = "debug", skip_all, fields(viewer = ?viewer.map(|a| a.user_id.as_str()), id = %id), err(level = "debug"))]
 pub async fn detail(
     conn: &Connection,
     flags: &Flags,
@@ -869,6 +889,7 @@ pub async fn detail(
 }
 
 /// Signer count. Names stay private until a public-profile setting exists.
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn signers(conn: &Connection, id: &str) -> Result<Signers, AppError> {
     let p = load(conn, id).await?.ok_or(AppError::NotFound)?;
     if p.status == ProposalStatus::Draft {
@@ -881,6 +902,7 @@ pub async fn signers(conn: &Connection, id: &str) -> Result<Signers, AppError> {
     })
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(viewer = ?viewer.map(|a| a.user_id.as_str())), err(level = "debug"))]
 pub async fn dashboard(
     conn: &Connection,
     tz: Tz,
@@ -927,6 +949,7 @@ pub async fn dashboard(
 }
 
 /// Markdown export of a published proposal with its text hash.
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn export_markdown(conn: &Connection, tz: Tz, id: &str) -> Result<String, AppError> {
     let p = load(conn, id).await?.ok_or(AppError::NotFound)?;
     let hash = p.text_hash.clone().ok_or(AppError::NotFound)?;

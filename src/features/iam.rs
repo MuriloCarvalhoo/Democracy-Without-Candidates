@@ -87,6 +87,10 @@ mod srv {
 }
 
 #[server(input = leptos::server_fn::codec::Json, endpoint = "iam/change")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_change(cmd: IamCommand) -> Result<Option<String>, AppError> {
     use crate::{
         application::iam, domain::iam::DOCUMENT_MAX_BYTES, features::face::bounded, server::context,
@@ -184,6 +188,10 @@ pub async fn iam_change(cmd: IamCommand) -> Result<Option<String>, AppError> {
 }
 
 #[server(endpoint = "iam/policies")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_policies() -> Result<Vec<PolicySummary>, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
@@ -192,6 +200,10 @@ pub async fn iam_policies() -> Result<Vec<PolicySummary>, AppError> {
 }
 
 #[server(endpoint = "iam/policy")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_policy(id: String) -> Result<PolicyView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
@@ -200,6 +212,10 @@ pub async fn iam_policy(id: String) -> Result<PolicyView, AppError> {
 }
 
 #[server(endpoint = "iam/groups")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_groups() -> Result<Vec<GroupSummary>, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
@@ -208,6 +224,10 @@ pub async fn iam_groups() -> Result<Vec<GroupSummary>, AppError> {
 }
 
 #[server(endpoint = "iam/group")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_group(id: String) -> Result<GroupView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
@@ -216,6 +236,10 @@ pub async fn iam_group(id: String) -> Result<GroupView, AppError> {
 }
 
 #[server(endpoint = "iam/users")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_users(query: String) -> Result<Vec<UserRef>, AppError> {
     use crate::{application::iam, features::face::bounded, server::context};
     let state = context::state()?;
@@ -229,6 +253,10 @@ pub async fn iam_users(query: String) -> Result<Vec<UserRef>, AppError> {
 }
 
 #[server(endpoint = "iam/user")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_user(id: String) -> Result<UserView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
@@ -237,6 +265,10 @@ pub async fn iam_user(id: String) -> Result<UserView, AppError> {
 }
 
 #[server(endpoint = "iam/simulate")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn iam_simulate(
     email: String,
     action: String,

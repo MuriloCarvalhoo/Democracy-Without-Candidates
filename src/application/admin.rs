@@ -26,6 +26,7 @@ use crate::{
     },
 };
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn overview(
     db: &Db,
     actor: &Actor,
@@ -120,6 +121,7 @@ fn db_bytes(path: &Path) -> u64 {
         .sum()
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, key = %key, enabled = %enabled), err(level = "debug"))]
 pub async fn set_flag(
     db: &Db,
     now: DateTime<Utc>,

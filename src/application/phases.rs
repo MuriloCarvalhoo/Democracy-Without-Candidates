@@ -64,7 +64,7 @@ pub async fn electorate_count(conn: &Connection, jurisdiction_id: &str) -> Resul
         [jurisdiction_id],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?)
 }
 
@@ -72,6 +72,7 @@ pub async fn electorate_count(conn: &Connection, jurisdiction_id: &str) -> Resul
 /// the managed `Cidadao` policy, directly or through a group,
 /// whose municipality/state/country matches) for one proposal phase. Immutable.
 /// An empty electorate cannot open a phase.
+#[tracing::instrument(level = "debug", skip_all, fields(proposal_id = %proposal_id, phase = ?phase, jurisdiction_id = %jurisdiction_id, setup_version_id = %setup_version_id), err(level = "debug"))]
 pub async fn snapshot(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -102,7 +103,9 @@ pub async fn snapshot(
         )
         .await?;
     if inserted != count {
-        return Err(AppError::Internal);
+        return Err(AppError::internal(format_args!(
+            "electorate snapshot inserted {inserted} of {count} members"
+        )));
     }
     Ok((id, count))
 }
@@ -145,21 +148,30 @@ async fn record(
 
 /// Closes collection after the threshold is reached and opens the next phase:
 /// debate (normal law, setup change) or voting (urgent law).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn close_collection(
     tx: &Connection,
     now: DateTime<Utc>,
     p: &ProposalRow,
 ) -> Result<ProposalStatus, AppError> {
-    let next = p.kind.after_collection().ok_or(AppError::Internal)?;
+    let next = p
+        .kind
+        .after_collection()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     match next {
         ProposalStatus::InDebate => {
-            let setup_id = p.setup_version_id.as_deref().ok_or(AppError::Internal)?;
-            let setup = setup::get(tx, setup_id).await?.ok_or(AppError::Internal)?;
+            let setup_id = p
+                .setup_version_id
+                .as_deref()
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
+            let setup = setup::get(tx, setup_id)
+                .await?
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
             let days = setup
                 .params
                 .rules(p.kind)
                 .debate_days
-                .ok_or(AppError::Internal)?;
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
             let ends = ts(now + Duration::days(days.into()));
             let changed = tx
                 .execute(
@@ -187,6 +199,7 @@ pub async fn close_collection(
 
 /// Opens voting with the setup effective now and a fresh electorate snapshot.
 /// Notifies the jurisdiction (`voting::on_opened`) in the same transaction.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn open_voting(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -249,7 +262,8 @@ async fn due(conn: &Connection, now: &str) -> Result<Vec<(String, ProposalStatus
         .map(|r| {
             Ok((
                 r.get(0)?,
-                ProposalStatus::from_db(&r.get::<String>(1)?).ok_or(AppError::Internal)?,
+                ProposalStatus::from_db(&r.get::<String>(1)?)
+                    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
             ))
         })
         .collect()
@@ -261,6 +275,7 @@ async fn due(conn: &Connection, now: &str) -> Result<Vec<(String, ProposalStatus
 ///
 /// Votes past `vote_ends_at` are then closed by `voting::close_due_votes`
 /// (tally from ballots + `close_vote`), also one transaction each.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn advance_due(
     db: &Db,
     now: DateTime<Utc>,
@@ -335,6 +350,7 @@ async fn reject_package(tx: &Connection, p: &ProposalRow) -> Result<(), AppError
 }
 
 /// Votes whose deadline passed and still await closing by the voting feature.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn due_votes(conn: &Connection, now: DateTime<Utc>) -> Result<Vec<String>, AppError> {
     query_all(
         conn,
@@ -349,6 +365,7 @@ pub async fn due_votes(conn: &Connection, now: DateTime<Utc>) -> Result<Vec<Stri
 
 /// Rules governing an open vote: `(electorate size, quorum bp, majority bp)`,
 /// from the vote snapshot and the setup version captured at voting opening.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn vote_rules(conn: &Connection, p: &ProposalRow) -> Result<(u64, u32, u32), AppError> {
     let snapshot = p.vote_snapshot_id.as_deref().ok_or(AppError::PhaseClosed)?;
     let setup_id = p
@@ -361,11 +378,11 @@ pub async fn vote_rules(conn: &Connection, p: &ProposalRow) -> Result<(u64, u32,
         [snapshot],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     let setup: SetupVersion = setup::get(conn, setup_id)
         .await?
-        .ok_or(AppError::Internal)?;
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let rules = setup.params.rules(p.kind);
     Ok((electorate, rules.quorum_bp, rules.majority_bp))
 }
@@ -374,6 +391,7 @@ pub async fn vote_rules(conn: &Connection, p: &ProposalRow) -> Result<(u64, u32,
 /// transaction: applies `compute_result`, stores the terminal status, audits,
 /// notifies the author and, for setup plebiscites/meta-laws, adopts or rejects
 /// the proposed package (effective only for elections opened afterwards).
+#[tracing::instrument(level = "debug", skip_all, fields(proposal_id = %proposal_id), err(level = "debug"))]
 pub async fn close_vote(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -389,7 +407,7 @@ pub async fn close_vote(
     let (electorate, quorum_bp, majority_bp) = vote_rules(tx, &p).await?;
     let calc = compute_result(tally, electorate, quorum_bp, majority_bp).map_err(|e| match e {
         ElectoralError::EmptyElectorate | ElectoralError::TallyExceedsElectorate => {
-            AppError::Internal
+            AppError::internal(format_args!("vote result: {e:?}"))
         }
     })?;
     let to = calc.outcome.status();
@@ -423,6 +441,7 @@ pub async fn close_vote(
 /// Starts the initial setup plebiscite for the national jurisdiction with a
 /// proposed package (normally `setup::SUGGESTED`): the country admin only starts
 /// it; adoption happens through `close_vote` if approved. Opens voting directly.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn start_initial_setup(
     db: &Db,
     now: DateTime<Utc>,
@@ -443,7 +462,7 @@ pub async fn start_initial_setup(
         (),
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     if open > 0 {
         return Err(AppError::Conflict(
@@ -480,7 +499,9 @@ pub async fn start_initial_setup(
     )
     .await?;
     // Draft → voting: published_at marks the start; the row never stays a draft.
-    let row = proposals::load(&tx, &id).await?.ok_or(AppError::Internal)?;
+    let row = proposals::load(&tx, &id)
+        .await?
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let (snapshot_id, electorate) =
         snapshot(&tx, now, &id, Phase::Voting, &national, &package).await?;
     let ends_at = now + Duration::days(params.rules(ProposalKind::InitialSetup).vote_days.into());

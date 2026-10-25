@@ -17,6 +17,10 @@ use crate::{
 /// Unread count for the nav badge; `None` without a valid session. Background
 /// fetch: does not renew session activity.
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn unread_notification_count() -> Result<Option<i64>, AppError> {
     use crate::{application::notify, server::context};
     let actor = match context::current_actor(false).await {
@@ -31,6 +35,7 @@ pub async fn unread_notification_count() -> Result<Option<i64>, AppError> {
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(page = %page), err(level = "debug")))]
 pub async fn notification_list(page: u32) -> Result<NotificationPage, AppError> {
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
@@ -39,6 +44,7 @@ pub async fn notification_list(page: u32) -> Result<NotificationPage, AppError> 
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn mark_notification_read(id: String) -> Result<(), AppError> {
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
@@ -50,6 +56,10 @@ pub async fn mark_notification_read(id: String) -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn mark_all_notifications_read() -> Result<u64, AppError> {
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
@@ -61,6 +71,10 @@ pub async fn mark_all_notifications_read() -> Result<u64, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn notification_settings() -> Result<Vec<Preference>, AppError> {
     use crate::{application::notify, server::context};
     let actor = context::require_actor().await?;
@@ -69,6 +83,7 @@ pub async fn notification_settings() -> Result<Vec<Preference>, AppError> {
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(category = %category, in_app = %in_app), err(level = "debug")))]
 pub async fn set_notification_preference(category: String, in_app: bool) -> Result<(), AppError> {
     use crate::{application::notify, domain::notification::Category, server::context};
     let category = Category::from_db(&category)
@@ -172,7 +187,8 @@ pub fn NotificationsPage() -> impl IntoView {
                                     <li class="card" data-read=n.read.to_string()>
                                         <strong>{n.title.clone()}</strong>
                                         <p>{n.body.clone()}</p>
-                                        // <div>, not <p>: a <form> inside <p> is invalid HTML and breaks hydration.
+                                        // div, not p: a form inside <p> is invalid HTML; the
+                                        // parser moves it and hydration panics.
                                         <div class="row">
                                             <small>{format_instant(&n.created_at)}</small>
                                             {n.link.clone().map(|href| view! { <A href=href>{t("notifications.open")}</A> })}

@@ -67,6 +67,7 @@ fn stored_document(name: &str, json: &str) -> Result<PolicyDocument, AppError> {
 /// Policies in force for an account (one query). Status dominates attachments:
 /// blocked → nothing; pending → baseline + `Publico`; active → baseline +
 /// `Publico` + attachments. Never cached, so changes apply on the next request.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn principal_access(
     conn: &Connection,
     user_id: &str,
@@ -89,6 +90,7 @@ pub async fn principal_access(
 }
 
 /// Access of anonymous visitors: the managed `Publico` policy only.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn public_access(conn: &Connection) -> Result<Access, AppError> {
     let row = query_opt(
         conn,
@@ -96,7 +98,7 @@ pub async fn public_access(conn: &Connection) -> Result<Access, AppError> {
         [PUBLICO],
     )
     .await?
-    .ok_or(AppError::Internal)?;
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let name: String = row.get(0)?;
     let doc = stored_document(&name, &row.get::<String>(1)?)?;
     Ok(Access::new(vec![(name, doc)]))
@@ -104,6 +106,7 @@ pub async fn public_access(conn: &Connection) -> Result<Access, AppError> {
 
 /// Public reads: a visitor is evaluated against `Publico`, an account against
 /// its own access. Denied visitors are asked to sign in.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn require_viewer(
     conn: &Connection,
     viewer: Option<&Actor>,
@@ -118,6 +121,7 @@ pub async fn require_viewer(
 
 /// Check scoped to a jurisdiction (`jurisdiction:<IBGE code>`). The code is only
 /// looked up when some attached statement names a specific resource.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn can_in_jurisdiction(
     conn: &Connection,
     actor: &Actor,
@@ -138,6 +142,7 @@ pub async fn can_in_jurisdiction(
     Ok(actor.can_on(permission, &jurisdiction_resource(&code)))
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn require_in_jurisdiction(
     conn: &Connection,
     actor: &Actor,
@@ -162,6 +167,7 @@ pub fn may_act(actor: &Actor, permission: Permission) -> Result<(), AppError> {
 }
 
 /// Attaches `Cidadao` (idempotent). Called when an account becomes active.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn attach_cidadao(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -277,8 +283,7 @@ fn clean_description(description: &str) -> Result<String, AppError> {
 /// Validates and minifies a document for storage.
 fn clean_document(document: &str) -> Result<String, AppError> {
     parse_document(document).map_err(|e| AppError::validation("document", e.user_message()))?;
-    let value: serde_json::Value =
-        serde_json::from_str(document).map_err(|_| AppError::Internal)?;
+    let value: serde_json::Value = serde_json::from_str(document).map_err(AppError::internal)?;
     Ok(value.to_string())
 }
 
@@ -350,6 +355,7 @@ fn constraint_conflict(error: turso::Error, message: &'static str) -> AppError {
 
 // ---- Policies ----
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn list_policies(
     conn: &Connection,
     actor: &Actor,
@@ -378,6 +384,7 @@ pub async fn list_policies(
     Ok(out)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn get_policy(
     conn: &Connection,
     actor: &Actor,
@@ -406,6 +413,7 @@ pub async fn get_policy(
     })
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn create_policy(
     db: &Db,
     now: DateTime<Utc>,
@@ -441,6 +449,7 @@ pub async fn create_policy(
     Ok(id)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn update_policy(
     db: &Db,
     now: DateTime<Utc>,
@@ -470,7 +479,7 @@ pub async fn update_policy(
         [id],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     finish(
         change,
@@ -484,6 +493,7 @@ pub async fn update_policy(
 }
 
 /// Customer policies only, and only once detached everywhere (as in IAM).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn delete_policy(
     db: &Db,
     now: DateTime<Utc>,
@@ -523,6 +533,7 @@ pub async fn delete_policy(
 
 // ---- Groups ----
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn list_groups(conn: &Connection, actor: &Actor) -> Result<Vec<GroupSummary>, AppError> {
     actor.require(Permission::IamRead)?;
     let rows = query_all(
@@ -547,6 +558,7 @@ pub async fn list_groups(conn: &Connection, actor: &Actor) -> Result<Vec<GroupSu
     Ok(out)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn get_group(conn: &Connection, actor: &Actor, id: &str) -> Result<GroupView, AppError> {
     actor.require(Permission::IamRead)?;
     let row = query_opt(
@@ -601,6 +613,7 @@ async fn policy_refs(conn: &Connection, sql: &str, key: &str) -> Result<Vec<Poli
     Ok(out)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn create_group(
     db: &Db,
     now: DateTime<Utc>,
@@ -633,6 +646,7 @@ pub async fn create_group(
     Ok(id)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn delete_group(
     db: &Db,
     now: DateTime<Utc>,
@@ -659,6 +673,7 @@ pub async fn delete_group(
     .await
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn set_group_policy(
     db: &Db,
     now: DateTime<Utc>,
@@ -706,6 +721,7 @@ pub async fn set_group_policy(
 }
 
 /// Adds or removes a member, identified by e-mail.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn set_group_member(
     db: &Db,
     now: DateTime<Utc>,
@@ -763,6 +779,7 @@ fn unchanged_conflict(changed: u64, adding: bool) -> Result<(), AppError> {
 // ---- Users ----
 
 /// Accounts whose e-mail starts with `query` (2+ characters), at most 20.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn search_users(
     conn: &Connection,
     actor: &Actor,
@@ -793,9 +810,11 @@ pub async fn search_users(
 }
 
 fn status_of(user: &UserRef) -> Result<AccountStatus, AppError> {
-    AccountStatus::from_db(&user.status).ok_or(AppError::Internal)
+    AccountStatus::from_db(&user.status)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn user_detail(conn: &Connection, actor: &Actor, id: &str) -> Result<UserView, AppError> {
     actor.require(Permission::IamRead)?;
     let user = user_ref(conn, id).await?;
@@ -835,6 +854,7 @@ pub async fn user_detail(conn: &Connection, actor: &Actor, id: &str) -> Result<U
     })
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn set_user_policy(
     db: &Db,
     now: DateTime<Utc>,
@@ -891,6 +911,7 @@ fn valid_request_resource(resource: &str) -> bool {
 
 /// Evaluates `action` on `resource` for the account with this e-mail, exactly as
 /// a request would (status, `Publico`, attachments and groups).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn simulate(
     conn: &Connection,
     actor: &Actor,
@@ -926,6 +947,7 @@ pub async fn simulate(
 
 /// Operator bootstrap from the VPS shell (`dwc grant-admin <email>`): attaches
 /// AdministratorAccess to an existing active account. Not exposed over HTTP.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn grant_administrator(db: &Db, now: DateTime<Utc>, email: &str) -> Result<(), AppError> {
     let email = normalize_email(email).ok_or_else(user_not_found)?;
     let tx = db.write().await?;

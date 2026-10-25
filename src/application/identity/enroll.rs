@@ -29,6 +29,7 @@ pub struct Status {
     pub totp_reenroll_required: bool,
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn status(deps: &Deps<'_>, user_id: &str) -> Result<Status, AppError> {
     let conn = deps.db.read().await?;
     let c = credentials(&conn, user_id).await?;
@@ -44,6 +45,7 @@ fn not_allowed() -> AppError {
 }
 
 /// Stores the encrypted face template of a pending account (once).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn enroll_face(
     deps: &Deps<'_>,
     actor: &Actor,
@@ -85,6 +87,7 @@ pub async fn enroll_face(
 }
 
 /// New pending TOTP secret (replaces a previous unconfirmed one).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn begin_totp(deps: &Deps<'_>, actor: &Actor) -> Result<Provisioning, AppError> {
     let s = status(deps, &actor.user_id).await?;
     let first = actor.status == AccountStatus::Pending && s.face_enrolled && !s.totp_confirmed;
@@ -113,6 +116,7 @@ pub struct Confirmed {
 
 /// Confirms the pending secret with a valid code. First enrollment activates the
 /// account, issues recovery codes and rotates the session; re-enrollment clears the flag.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn confirm_totp(
     deps: &Deps<'_>,
     actor: &Actor,

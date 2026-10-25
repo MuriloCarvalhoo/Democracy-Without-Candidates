@@ -33,6 +33,7 @@ pub fn token_hash(token: &str) -> String {
 }
 
 /// Creates a session inside the caller's transaction; returns the cookie token.
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn create(
     conn: &turso::Connection,
     now: DateTime<Utc>,
@@ -54,6 +55,7 @@ pub async fn create(
 /// Resolves the actor for a cookie token. `touch` renews idle expiry (explicit
 /// navigation/actions); background polling must pass `false`.
 /// Expired or revoked sessions return `SessionExpired`; unknown tokens `Ok(None)`.
+#[tracing::instrument(level = "debug", skip_all, fields(touch = %touch), err(level = "debug"))]
 pub async fn resolve(
     db: &Db,
     now: DateTime<Utc>,
@@ -73,8 +75,10 @@ pub async fn resolve(
         return Ok(None);
     };
     let user_id: String = row.get(0)?;
-    let idle = parse_ts(&row.get::<String>(1)?).ok_or(AppError::Internal)?;
-    let absolute = parse_ts(&row.get::<String>(2)?).ok_or(AppError::Internal)?;
+    let idle = parse_ts(&row.get::<String>(1)?)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
+    let absolute = parse_ts(&row.get::<String>(2)?)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let revoked: Option<String> = row.get(3)?;
     if revoked.is_some() || now >= idle || now >= absolute {
         return Err(AppError::SessionExpired);
@@ -99,6 +103,7 @@ pub async fn resolve(
     Ok(Some(actor))
 }
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn revoke(
     conn: &turso::Connection,
     now: DateTime<Utc>,
@@ -114,6 +119,7 @@ pub async fn revoke(
 }
 
 /// Revokes every active session of a user (password change/reset, blocking).
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn revoke_all(
     conn: &turso::Connection,
     now: DateTime<Utc>,

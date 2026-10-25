@@ -14,6 +14,9 @@ use fantoccini::{Client, ClientBuilder, Locator};
 
 pub const WAIT: Duration = Duration::from_secs(20);
 
+/// `App::start` extra env key: path of a file receiving the server's stderr.
+pub const STDERR_FILE: &str = "E2E_STDERR_FILE";
+
 pub fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -174,43 +177,6 @@ pub fn http_post(port: u16, path: &str, headers: &[(&str, &str)], body: &str) ->
     (status, body)
 }
 
-/// POST to chromedriver reading exactly `Content-Length` bytes (it may keep the
-/// connection open). Returns the body of a 200 response.
-fn driver_post_json(port: u16, path: &str, body: &str) -> String {
-    use std::io::{BufRead, BufReader};
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect chromedriver");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
-    write!(
-        stream,
-        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    )
-    .unwrap();
-    let mut reader = BufReader::new(stream);
-    let mut status_line = String::new();
-    reader.read_line(&mut status_line).unwrap();
-    let mut length = 0;
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        if line == "\r\n" || line.is_empty() {
-            break;
-        }
-        if let Some((k, v)) = line.split_once(':')
-            && k.eq_ignore_ascii_case("content-length")
-        {
-            length = v.trim().parse().unwrap_or(0);
-        }
-    }
-    let mut buf = vec![0; length];
-    reader.read_exact(&mut buf).unwrap();
-    let text = String::from_utf8(buf).unwrap();
-    assert!(status_line.contains(" 200 "), "{status_line}: {text}");
-    text
-}
-
 fn spawn_app(db_path: &Path, port: u16, env: &[(String, String)]) -> Child {
     let mut child = app_command(db_path, port, env).spawn().expect("spawn app");
     // Fail fast if the process exits during startup (bad config, port in use).
@@ -241,7 +207,17 @@ fn app_command(db_path: &Path, port: u16, env: &[(String, String)]) -> Command {
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     for (k, v) in env {
-        cmd.env(k, v);
+        // Harness option, not an app setting: append the server log to a file.
+        if k == STDERR_FILE {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(v)
+                .expect("server log file");
+            cmd.stderr(file);
+        } else {
+            cmd.env(k, v);
+        }
     }
     cmd
 }
@@ -255,7 +231,6 @@ impl Drop for App {
 
 pub struct Browser {
     driver: Child,
-    driver_port: u16,
     pub client: Client,
 }
 
@@ -281,7 +256,7 @@ impl Browser {
         }
         let mut caps = serde_json::Map::new();
         caps.insert("goog:chromeOptions".into(), chrome);
-        // Keeps browser console messages readable through `console_errors`.
+        // Browser console entries, read back with `Browser::console`.
         caps.insert(
             "goog:loggingPrefs".into(),
             serde_json::json!({ "browser": "ALL" }),
@@ -292,34 +267,28 @@ impl Browser {
             .connect(&format!("http://127.0.0.1:{port}"))
             .await
             .expect("webdriver session");
-        Self {
-            driver,
-            driver_port: port,
-            client,
-        }
+        Self { driver, client }
     }
 
-    /// SEVERE browser console entries since the last call (chromedriver log API).
+    /// SEVERE browser console entries since the last call. Drains the console,
+    /// so it also fails on app crashes that `close` would no longer see.
     pub async fn console_errors(&self) -> Vec<String> {
-        let sid = self
-            .client
-            .session_id()
+        let severe: Vec<String> = self
+            .console()
             .await
-            .unwrap()
-            .expect("webdriver session");
-        let body = driver_post_json(
-            self.driver_port,
-            &format!("/session/{sid}/se/log"),
-            r#"{"type":"browser"}"#,
-        );
-        let json: serde_json::Value = serde_json::from_str(&body).expect("log json");
-        json["value"]
-            .as_array()
             .into_iter()
-            .flatten()
-            .filter(|e| e["level"] == "SEVERE")
-            .filter_map(|e| e["message"].as_str().map(str::to_owned))
-            .collect()
+            .filter_map(|l| l.strip_prefix("SEVERE ").map(str::to_owned))
+            .collect();
+        let crashes: Vec<&String> = severe
+            .iter()
+            .filter(|l| {
+                l.contains("panicked")
+                    || l.contains("hydration error")
+                    || l.contains("RuntimeError")
+            })
+            .collect();
+        assert!(crashes.is_empty(), "browser app crashed: {crashes:#?}");
+        severe
     }
 
     pub async fn goto_hydrated(&self, url: &str) {
@@ -360,10 +329,80 @@ impl Browser {
         }
     }
 
+    /// Browser console entries since the previous call, as `LEVEL message`
+    /// (chromedriver log endpoint; requires `goog:loggingPrefs`).
+    pub async fn console(&self) -> Vec<String> {
+        let Ok(value) = self.client.issue_cmd(BrowserLog).await else {
+            return Vec::new();
+        };
+        value
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{} {}",
+                            e["level"].as_str().unwrap_or("?"),
+                            e["message"].as_str().unwrap_or("")
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Console entries meaning the WebAssembly app stopped (panic, hydration
+    /// failure, trap). Drains the console like `console`.
+    pub async fn crashes(&self) -> Vec<String> {
+        self.console()
+            .await
+            .into_iter()
+            .filter(|l| {
+                l.contains("panicked")
+                    || l.contains("hydration error")
+                    || l.contains("RuntimeError")
+            })
+            .collect()
+    }
+
+    /// Ends the session; fails the test if the app panicked since the last
+    /// console read (a browser panic stops the whole app).
     pub async fn close(self) {
+        let crashes = self.crashes().await;
+        self.close_allowing_crash().await;
+        assert!(crashes.is_empty(), "browser app crashed: {crashes:#?}");
+    }
+
+    /// For tests that trigger a panic on purpose.
+    pub async fn close_allowing_crash(self) {
         let _ = self.client.close().await;
         let mut driver = self.driver;
         let _ = driver.kill();
         let _ = driver.wait();
+    }
+}
+
+/// chromedriver `POST /session/{id}/se/log` for the browser console.
+#[derive(Debug)]
+struct BrowserLog;
+
+impl fantoccini::wd::WebDriverCompatibleCommand for BrowserLog {
+    fn endpoint(
+        &self,
+        base_url: &url::Url,
+        session_id: Option<&str>,
+    ) -> Result<url::Url, url::ParseError> {
+        base_url.join(&format!(
+            "session/{}/se/log",
+            session_id.unwrap_or_default()
+        ))
+    }
+
+    fn method_and_body(&self, _: &url::Url) -> (axum::http::Method, Option<String>) {
+        (
+            axum::http::Method::POST,
+            Some(r#"{"type":"browser"}"#.to_owned()),
+        )
     }
 }

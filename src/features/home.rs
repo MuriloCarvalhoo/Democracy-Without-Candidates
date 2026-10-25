@@ -7,6 +7,10 @@ use crate::{error::AppError, features::ui::action_error, i18n::t};
 
 // Stable endpoints: used by the load test harness (tools/load).
 #[server(endpoint = "get_counter")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn get_counter() -> Result<i64, AppError> {
     use crate::{infrastructure::db::query_opt, server::context};
     let state = context::state()?;
@@ -27,6 +31,10 @@ pub async fn get_counter() -> Result<i64, AppError> {
 }
 
 #[server(endpoint = "increment_counter")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn increment_counter() -> Result<i64, AppError> {
     use crate::{
         infrastructure::{clock::ts, db::query_opt},
@@ -45,7 +53,7 @@ pub async fn increment_counter() -> Result<i64, AppError> {
     .await?;
     let value: i64 = query_opt(&tx, "SELECT value FROM synthetic_counter WHERE id = 1", ())
         .await?
-        .ok_or(AppError::Internal)?
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
         .get(0)?;
     tx.commit().await?;
     Ok(value)

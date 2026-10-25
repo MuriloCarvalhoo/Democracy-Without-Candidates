@@ -34,6 +34,10 @@ pub struct ProfileView {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn my_profile() -> Result<ProfileView, AppError> {
     use crate::{
         application::identity::{enroll, profile},
@@ -65,6 +69,10 @@ pub async fn my_profile() -> Result<ProfileView, AppError> {
 
 /// Only the name is editable; the address is never changed by any endpoint.
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn update_profile_name(name: String) -> Result<(), AppError> {
     use crate::{
         application::identity::profile::{self, ProfileUpdate},
@@ -89,6 +97,7 @@ pub async fn update_profile_name(name: String) -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(profile_visibility = ?profile_visibility, default_vote_visibility = ?default_vote_visibility), err(level = "debug")))]
 pub async fn save_privacy(
     profile_visibility: Visibility,
     default_vote_visibility: Visibility,

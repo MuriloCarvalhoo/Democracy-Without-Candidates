@@ -49,6 +49,7 @@ impl Actor {
 }
 
 /// Account row plus its effective policies (two queries).
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn load(
     conn: &turso::Connection,
     user_id: &str,
@@ -63,7 +64,8 @@ pub async fn load(
     else {
         return Ok(None);
     };
-    let status = AccountStatus::from_db(&row.get::<String>(1)?).ok_or(AppError::Internal)?;
+    let status = AccountStatus::from_db(&row.get::<String>(1)?)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let access = super::iam::principal_access(conn, user_id, status).await?;
     Ok(Some(Actor {
         user_id: user_id.to_owned(),

@@ -51,7 +51,7 @@ async fn recount(tx: &Connection, ctx: &Ctx<'_>, id: &str) -> Result<u64, AppErr
         [id],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     tx.execute(
         "UPDATE proposals SET signature_count = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'collecting_signatures'",
@@ -78,6 +78,7 @@ fn key<'a>(
 /// Signs during collection. Requires the `signatures` flag, eligibility in the
 /// collection snapshot and a `proposal:sign` reauth grant consumed in the same
 /// transaction. Reaching the target closes collection and opens the next phase.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn sign(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -97,7 +98,7 @@ pub async fn sign(
     let snapshot = p
         .collection_snapshot_id
         .as_deref()
-        .ok_or(AppError::Internal)?;
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     if !actor.participates_in(&p.jurisdiction_id)
         || !proposals::in_snapshot(&tx, snapshot, &actor.user_id).await?
     {
@@ -117,7 +118,10 @@ pub async fn sign(
         ));
     }
     reauth::consume(&tx, ctx.now, &actor.session_hash, REAUTH_SIGN, id).await?;
-    let text_hash = p.text_hash.clone().ok_or(AppError::Internal)?;
+    let text_hash = p
+        .text_hash
+        .clone()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     tx.execute(
         "INSERT INTO signatures (proposal_id, user_id, text_hash, active, signed_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)
          ON CONFLICT(proposal_id, user_id) DO UPDATE SET active = 1, signed_at = excluded.signed_at, updated_at = excluded.updated_at",
@@ -125,7 +129,9 @@ pub async fn sign(
     )
     .await?;
     let count = recount(&tx, &ctx, id).await?;
-    let target = p.signature_target.ok_or(AppError::Internal)?;
+    let target = p
+        .signature_target
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     audit::append(
         &tx,
         ctx.now,
@@ -157,6 +163,7 @@ pub async fn sign(
 }
 
 /// Withdraws the caller's active signature while collection is open.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn withdraw_signature(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -185,7 +192,9 @@ pub async fn withdraw_signature(
         ));
     }
     let count = recount(&tx, &ctx, id).await?;
-    let target = p.signature_target.ok_or(AppError::Internal)?;
+    let target = p
+        .signature_target
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     audit::append(
         &tx,
         ctx.now,

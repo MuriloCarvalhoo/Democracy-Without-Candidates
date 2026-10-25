@@ -60,6 +60,7 @@ fn from_row(row: &Row) -> Result<SetupVersion, AppError> {
     })
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn get(conn: &Connection, id: &str) -> Result<Option<SetupVersion>, AppError> {
     match query_opt(conn, &select_sql("WHERE id = ?1"), [id]).await? {
         Some(row) => Ok(Some(from_row(&row)?)),
@@ -69,6 +70,7 @@ pub async fn get(conn: &Connection, id: &str) -> Result<Option<SetupVersion>, Ap
 
 /// Effective setup for a jurisdiction: its own adopted version, otherwise the
 /// nearest adopted ancestor (municipal → state → national).
+#[tracing::instrument(level = "debug", skip_all, fields(jurisdiction_id = %jurisdiction_id), err(level = "debug"))]
 pub async fn effective_setup(
     conn: &Connection,
     jurisdiction_id: &str,
@@ -100,6 +102,7 @@ pub async fn effective_setup(
 }
 
 /// Inserts a `proposed` package (voted by a setup_change/initial_setup proposal).
+#[tracing::instrument(level = "debug", skip_all, fields(jurisdiction_id = %jurisdiction_id, synthetic = %synthetic), err(level = "debug"))]
 pub async fn insert_proposed(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -135,6 +138,7 @@ pub async fn insert_proposed(
 /// records a public audit event. Applies only to elections opened afterwards
 /// (proposals keep the version ids captured at each phase opening).
 /// Called by the voting feature when a setup plebiscite/meta-law is approved.
+#[tracing::instrument(level = "debug", skip_all, fields(setup_version_id = %setup_version_id, source_proposal_id = ?source_proposal_id), err(level = "debug"))]
 pub async fn adopt_proposed(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -153,7 +157,7 @@ pub async fn adopt_proposed(
         [setup.jurisdiction_id.as_str()],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     conn.execute(
         "UPDATE setup_versions SET status = 'superseded' WHERE jurisdiction_id = ?1 AND status = 'adopted'",
@@ -186,6 +190,7 @@ pub async fn adopt_proposed(
 }
 
 /// Marks a proposed package rejected (plebiscite rejected or quorum not reached).
+#[tracing::instrument(level = "debug", skip_all, fields(setup_version_id = %setup_version_id), err(level = "debug"))]
 pub async fn reject_proposed(conn: &Connection, setup_version_id: &str) -> Result<(), AppError> {
     let changed = conn
         .execute(
@@ -202,6 +207,7 @@ pub async fn reject_proposed(conn: &Connection, setup_version_id: &str) -> Resul
 
 /// Direct adoption, inside the caller's transaction. Only for synthetic
 /// fixtures/tests or the approved-plebiscite path; never exposed to clients.
+#[tracing::instrument(level = "debug", skip_all, fields(jurisdiction_id = %jurisdiction_id, source_proposal_id = ?source_proposal_id, synthetic = %synthetic), err(level = "debug"))]
 pub async fn adopt_setup(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -216,6 +222,7 @@ pub async fn adopt_setup(
 }
 
 /// Public history of every setup version, newest first.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn history(conn: &Connection) -> Result<Vec<SetupVersionView>, AppError> {
     let rows = query_all(
         conn,

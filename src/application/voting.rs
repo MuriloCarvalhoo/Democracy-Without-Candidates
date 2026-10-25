@@ -80,12 +80,14 @@ async fn own_ballot(
         return Ok(None);
     };
     Ok(Some(OwnBallot {
-        choice: Choice::from_db(&row.get::<String>(0)?).ok_or(AppError::Internal)?,
+        choice: Choice::from_db(&row.get::<String>(0)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
         cast_at: proposals::local(&row.get::<String>(1)?, tz),
     }))
 }
 
 /// Counts of accepted ballots by choice.
+#[tracing::instrument(level = "debug", skip_all, fields(proposal_id = %proposal_id), err(level = "debug"))]
 pub async fn tally(conn: &Connection, proposal_id: &str) -> Result<Tally, AppError> {
     let mut t = Tally::default();
     for row in query_all(
@@ -96,7 +98,9 @@ pub async fn tally(conn: &Connection, proposal_id: &str) -> Result<Tally, AppErr
     .await?
     {
         let n: u64 = row.get(1)?;
-        match Choice::from_db(&row.get::<String>(0)?).ok_or(AppError::Internal)? {
+        match Choice::from_db(&row.get::<String>(0)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
+        {
             Choice::Yes => t.yes = n,
             Choice::No => t.no = n,
             Choice::Abstain => t.abstain = n,
@@ -114,6 +118,7 @@ pub async fn tally(conn: &Connection, proposal_id: &str) -> Result<Tally, AppErr
 /// Idempotency: the same key and payload return the stored confirmation; the same
 /// key with another payload is a conflict; a new attempt after an accepted
 /// ballot is a conflict ("voto já registrado").
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id, public_consent = %public_consent), err(level = "debug"))]
 pub async fn cast(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -150,7 +155,10 @@ pub async fn cast(
     if !is_open(&p, ctx.now) {
         return Err(AppError::PhaseClosed);
     }
-    let snapshot = p.vote_snapshot_id.clone().ok_or(AppError::Internal)?;
+    let snapshot = p
+        .vote_snapshot_id
+        .clone()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     if !proposals::in_snapshot(&tx, &snapshot, &actor.user_id).await? {
         return Err(AppError::Forbidden);
     }
@@ -185,7 +193,7 @@ pub async fn cast(
         [id],
     )
     .await?
-    .ok_or(AppError::Internal)?
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
     .get(0)?;
     audit::append(
         &tx,
@@ -213,6 +221,7 @@ pub async fn cast(
 
 /// Own ballot plus whether an attempt key was stored with a result: lets the
 /// client resolve an unknown outcome (timeout) without casting again.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, id = %id), err(level = "debug"))]
 pub async fn status(
     conn: &Connection,
     tz: chrono_tz::Tz,
@@ -239,6 +248,7 @@ pub async fn status(
 /// Notifications when a vote opens, inside the opening transaction: the
 /// jurisdiction is told now and reminded 24 h before the deadline (delivered by
 /// the scheduled-notification ticker to every active participant).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn on_opened(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -312,6 +322,7 @@ fn outcome_from_db(outcome: &str, reason: Option<&str>) -> Option<Outcome> {
 /// Closes one vote whose deadline passed, inside the caller's transaction:
 /// tally from ballots, `phases::close_vote`, immutable result row and result
 /// notification to the jurisdiction. `None` when nothing is due (idempotent).
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn close_one(
     tx: &Connection,
     now: DateTime<Utc>,
@@ -379,6 +390,7 @@ pub async fn close_one(
 
 /// Closes every vote past its deadline, one transaction each. Idempotent and
 /// restart-safe: state is re-checked inside each transaction.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn close_due_votes(
     db: &Db,
     now: DateTime<Utc>,
@@ -399,6 +411,7 @@ pub async fn close_due_votes(
 }
 
 /// Voting page model. Eligibility comes from the vote snapshot, never from the client.
+#[tracing::instrument(level = "debug", skip_all, fields(demonstration = %demonstration, viewer = ?viewer.map(|a| a.user_id.as_str()), id = %id), err(level = "debug"))]
 pub async fn page(
     conn: &Connection,
     flags: &Flags,
@@ -449,6 +462,7 @@ pub async fn page(
 
 /// Public result. While voting is open only the deadline and electorate size
 /// are shown (no partial counts, to avoid influencing voters).
+#[tracing::instrument(level = "debug", skip_all, fields(demonstration = %demonstration, id = %id), err(level = "debug"))]
 pub async fn result(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -483,7 +497,7 @@ pub async fn result(
                 &r.get::<String>(10)?,
                 r.get::<Option<String>>(11)?.as_deref(),
             )
-            .ok_or(AppError::Internal)?;
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
             ResultState::Closed(ResultView {
                 snapshot_id: r.get(0)?,
                 setup_version_id,
@@ -504,7 +518,10 @@ pub async fn result(
             })
         }
         None if p.status == ProposalStatus::InVoting => {
-            let ends = p.vote_ends_at.clone().ok_or(AppError::Internal)?;
+            let ends = p
+                .vote_ends_at
+                .clone()
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
             if parse_ts(&ends).is_some_and(|e| e <= now) {
                 ResultState::Closing
             } else {
@@ -549,6 +566,7 @@ impl VotingCheck {
     }
 }
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn integrity(conn: &Connection) -> Result<VotingCheck, turso::Error> {
     let one = |sql: &'static str| async move {
         query_opt(conn, sql, ())

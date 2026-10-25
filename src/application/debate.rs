@@ -168,7 +168,7 @@ async fn require_can_post(
 async fn count(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<u64, AppError> {
     Ok(query_opt(conn, sql, params)
         .await?
-        .ok_or(AppError::Internal)?
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
         .get::<u64>(0)?)
 }
 
@@ -246,13 +246,14 @@ async fn load_comment(conn: &Connection, id: &str) -> Result<CommentRow, AppErro
         proposal_id: r.get(1)?,
         author_id: r.get(2)?,
         root_id: r.get(3)?,
-        depth: u8::try_from(r.get::<i64>(4)?).map_err(|_| AppError::Internal)?,
+        depth: u8::try_from(r.get::<i64>(4)?).map_err(AppError::internal)?,
         body: r.get(5)?,
         removed: r.get::<String>(6)? == "removed",
     })
 }
 
 /// Adds a top-level comment (`parent_id = None`) or a reply. Returns its id.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, proposal_id = %proposal_id, parent_id = ?parent_id), err(level = "debug"))]
 pub async fn post_comment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -313,6 +314,7 @@ pub async fn post_comment(
 }
 
 /// Author edit: keeps every previous version in the append-only history.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, comment_id = %comment_id), err(level = "debug"))]
 pub async fn edit_comment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -358,6 +360,7 @@ pub async fn edit_comment(
 }
 
 /// Edit history, visible to the comment author and moderators only.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, comment_id = %comment_id), err(level = "debug"))]
 pub async fn history(
     conn: &Connection,
     flags: &Flags,
@@ -388,6 +391,7 @@ pub async fn history(
 }
 
 /// One report per account and comment; never on own or removed comments.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, comment_id = %comment_id, reason = ?reason), err(level = "debug"))]
 pub async fn report_comment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -485,6 +489,7 @@ async fn record_moderation(
 
 /// Moderator decision on a comment, with mandatory reason, history and audit.
 /// Removal hides the comment from the public view; the content is kept.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, comment_id = %comment_id, decision = ?decision), err(level = "debug"))]
 pub async fn moderate_comment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -586,6 +591,7 @@ async fn resolve_reports(
 
 /// Locks (no new comments, replies, edits or amendments) or unlocks a debate.
 /// Never changes phases, signatures or results.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, proposal_id = %proposal_id, lock = %lock), err(level = "debug"))]
 pub async fn set_lock(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -667,6 +673,7 @@ fn placeholders(from: usize, n: usize) -> String {
 
 /// Public debate page: paginated top-level threads with their replies. Removed
 /// comments keep their place without content (moderators also see the content).
+#[tracing::instrument(level = "debug", skip_all, fields(viewer = ?viewer.map(|a| a.user_id.as_str()), proposal_id = %proposal_id, page = %page), err(level = "debug"))]
 pub async fn thread(
     conn: &Connection,
     flags: &Flags,
@@ -760,7 +767,7 @@ pub async fn thread(
     for r in rows {
         let id: String = r.get(0)?;
         let parent_id: Option<String> = r.get(1)?;
-        let depth = u8::try_from(r.get::<i64>(2)?).map_err(|_| AppError::Internal)?;
+        let depth = u8::try_from(r.get::<i64>(2)?).map_err(AppError::internal)?;
         let author_id: String = r.get(3)?;
         let removed = r.get::<String>(5)? == "removed";
         let own = viewer.is_some_and(|a| a.user_id == author_id);
@@ -826,6 +833,7 @@ pub async fn thread(
 }
 
 /// Open reports grouped by comment, oldest first (moderators only).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn moderation_queue(
     conn: &Connection,
     flags: &Flags,
@@ -845,7 +853,8 @@ pub async fn moderation_queue(
     let mut out: Vec<ReportedComment> = Vec::new();
     for r in rows {
         let id: String = r.get(0)?;
-        let reason = ReportReason::from_db(&r.get::<String>(5)?).ok_or(AppError::Internal)?;
+        let reason = ReportReason::from_db(&r.get::<String>(5)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         let details: String = r.get(6)?;
         let idx = match out.iter().position(|c| c.comment_id == id) {
             Some(i) => i,
@@ -878,6 +887,7 @@ pub async fn moderation_queue(
 // ---------------------------------------------------------------- amendments
 
 /// Suggested change bound to the published text hash. Never edits the proposal.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, proposal_id = %proposal_id), err(level = "debug"))]
 pub async fn propose_amendment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -904,7 +914,10 @@ pub async fn propose_amendment(
     if recent >= u64::from(AMENDMENT_DAILY_LIMIT) {
         return Err(AppError::RateLimited);
     }
-    let text_hash = p.text_hash.clone().ok_or(AppError::Internal)?;
+    let text_hash = p
+        .text_hash
+        .clone()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let id = new_id();
     let now = ts(ctx.now);
     tx.execute(
@@ -931,6 +944,7 @@ pub async fn propose_amendment(
 
 /// Withdrawal by the amendment author, or "addressed" (with a note) by the
 /// proposal author. Final: an amendment leaves `open` once.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, amendment_id = %amendment_id), err(level = "debug"))]
 pub async fn change_amendment(
     ctx: &Ctx<'_>,
     actor: &Actor,
@@ -997,6 +1011,7 @@ pub async fn change_amendment(
 }
 
 /// Public list of amendments of a published proposal, newest first.
+#[tracing::instrument(level = "debug", skip_all, fields(viewer = ?viewer.map(|a| a.user_id.as_str()), proposal_id = %proposal_id), err(level = "debug"))]
 pub async fn amendments(
     conn: &Connection,
     flags: &Flags,
@@ -1007,7 +1022,10 @@ pub async fn amendments(
 ) -> Result<AmendmentsView, AppError> {
     flags.require(flags::DEBATE)?;
     let p = published(conn, proposal_id).await?;
-    let current = p.text_hash.clone().ok_or(AppError::Internal)?;
+    let current = p
+        .text_hash
+        .clone()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let locked = lock_info(conn, &p.id, tz).await?.is_some();
     let is_author = viewer.is_some_and(|a| a.user_id == p.author_id);
     let mut labels = HashMap::new();
@@ -1021,7 +1039,7 @@ pub async fn amendments(
     .await?
     {
         let author_id: String = r.get(1)?;
-        let status = AmendmentStatus::from_db(&r.get::<String>(5)?).ok_or(AppError::Internal)?;
+        let status = AmendmentStatus::from_db(&r.get::<String>(5)?).ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
         let text_hash: String = r.get(4)?;
         let own = viewer.is_some_and(|a| a.user_id == author_id);
         let open = status == AmendmentStatus::Open;

@@ -39,6 +39,7 @@ pub struct Profile {
     pub default_vote_visibility: Visibility,
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn load(conn: &Connection, user_id: &str) -> Result<Profile, AppError> {
     let row = query_opt(
         conn,
@@ -56,7 +57,8 @@ pub async fn load(conn: &Connection, user_id: &str) -> Result<Profile, AppError>
     .await?
     .ok_or(AppError::NotFound)?;
     let vis = |i| -> Result<Visibility, AppError> {
-        Visibility::from_db(&row.get::<String>(i)?).ok_or(AppError::Internal)
+        Visibility::from_db(&row.get::<String>(i)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))
     };
     Ok(Profile {
         name: row.get(0)?,
@@ -84,6 +86,7 @@ pub struct ProfileUpdate {
     pub cep: Option<String>,
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn update(
     conn: &Connection,
     now: chrono::DateTime<chrono::Utc>,
@@ -108,6 +111,7 @@ pub async fn update(
 
 /// Critical action: consumes a `profile:privacy` reauthentication grant in the same
 /// transaction as the change.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, profile_visibility = ?profile_visibility, default_vote_visibility = ?default_vote_visibility), err(level = "debug"))]
 pub async fn set_privacy(
     conn: &Connection,
     now: chrono::DateTime<chrono::Utc>,
@@ -147,6 +151,7 @@ pub async fn set_privacy(
 }
 
 /// Default vote visibility for the voting feature (private when unset).
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn default_vote_visibility(
     conn: &Connection,
     user_id: &str,
@@ -171,6 +176,7 @@ pub struct PublicProfile {
     pub municipality: String,
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn public_view(
     conn: &Connection,
     user_id: &str,
@@ -193,6 +199,7 @@ pub async fn public_view(
 }
 
 /// Name shown on public pages: the public profile name, otherwise a neutral label.
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn public_label(conn: &Connection, user_id: &str) -> Result<String, AppError> {
     Ok(match public_view(conn, user_id).await? {
         Some(p) => p.name,

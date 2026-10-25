@@ -829,3 +829,32 @@ async fn cast_deadline_uses_time_read_after_acquiring_the_writer() {
         0
     );
 }
+
+/// `DWC_DEBUG` traces the vote use case without the ballot choice or the
+/// idempotency key (a choice must never be linkable to a user in logs).
+#[tokio::test]
+async fn debug_trace_of_cast_omits_choice_and_idempotency_key() {
+    let w = world(Some(quick())).await;
+    let author = w.citizen(BNU).await;
+    let ana = w.citizen(BNU).await;
+    let id = w.urgent_in_voting(&author, "Enchente").await;
+    let now = t0() + Duration::hours(1);
+    w.grant(now, &ana, REAUTH_VOTE, &id).await;
+
+    let (_guard, out) = crate::server::observability::testing::capture("dwc=debug");
+    voting::cast(
+        &w.ctx(now),
+        &ana,
+        &id,
+        Choice::Abstain,
+        true,
+        Some("chave-idem-secreta-123"),
+    )
+    .await
+    .unwrap();
+    let text = out.text();
+    assert!(text.contains("cast") && text.contains(&id), "{text}");
+    for secret in ["chave-idem-secreta-123", "abstain", "Abstain", "choice"] {
+        assert!(!text.contains(secret), "{secret} leaked: {text}");
+    }
+}

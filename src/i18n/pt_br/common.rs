@@ -33,6 +33,9 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         "error.transport" => {
             "Não foi possível falar com o servidor. O resultado é desconhecido; verifique antes de repetir."
         }
+        "error.busy" => "Servidor ocupado. Nada foi confirmado; tente novamente.",
+        "error.crashed" => "Ocorreu um erro interno nesta tela.",
+        "error.reload" => "Recarregar a página",
         "notfound.title" => "Página não encontrada",
         "home.title" => "Democracia direta, sem candidatos",
         "home.lead" => {

@@ -72,6 +72,9 @@ pub struct Config {
     /// `DWC_DEV_SKIP_TOTP=1`: TOTP codes are not checked (development/test only;
     /// rejected in production). Enrollment still stores a secret.
     pub dev_skip_totp: bool,
+    /// `DWC_DEBUG=1`: debug tracing of instrumented functions (development/test
+    /// only; rejected in production). Read by `server::observability` at startup.
+    pub debug: bool,
 }
 
 pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
@@ -193,17 +196,19 @@ impl Config {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let dev_skip_totp = match get("DWC_DEV_SKIP_TOTP").as_deref().map(str::trim) {
-            None | Some("") | Some("0") | Some("false") => false,
-            Some("1") | Some("true") if production => {
-                return Err(ConfigError::Invalid(
-                    "DWC_DEV_SKIP_TOTP",
-                    "TOTP cannot be skipped in production".into(),
-                ));
+        // Development/test switches: refused in production.
+        let dev_flag = |key: &'static str, why: &str| -> Result<bool, ConfigError> {
+            match get(key).as_deref().map(str::trim) {
+                None | Some("") | Some("0") | Some("false") => Ok(false),
+                Some("1") | Some("true") if production => {
+                    Err(ConfigError::Invalid(key, why.into()))
+                }
+                Some("1") | Some("true") => Ok(true),
+                Some(other) => Err(ConfigError::Invalid(key, other.into())),
             }
-            Some("1") | Some("true") => true,
-            Some(other) => return Err(ConfigError::Invalid("DWC_DEV_SKIP_TOTP", other.into())),
         };
+        let dev_skip_totp = dev_flag("DWC_DEV_SKIP_TOTP", "TOTP cannot be skipped in production")?;
+        let debug = dev_flag("DWC_DEBUG", "debug tracing is not allowed in production")?;
 
         let parse_secs = |key: &'static str, default: i64| -> Result<i64, ConfigError> {
             match get(key) {
@@ -236,6 +241,7 @@ impl Config {
             ticker_secs: parse_secs("DWC_TICKER_SECS", 30)?,
             trusted_proxies,
             dev_skip_totp,
+            debug,
         })
     }
 
@@ -434,6 +440,36 @@ mod tests {
         assert!(matches!(
             cfg(&prod),
             Err(ConfigError::Invalid("DWC_DEV_SKIP_TOTP", _))
+        ));
+    }
+
+    #[test]
+    fn debug_is_dev_only() {
+        assert!(!cfg(DEV).unwrap().debug);
+        let mut pairs = DEV.to_vec();
+        pairs.push(("DWC_DEBUG", "1"));
+        assert!(cfg(&pairs).unwrap().debug);
+        pairs.pop();
+        pairs.push(("DWC_DEBUG", "verbose"));
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Invalid("DWC_DEBUG", _))
+        ));
+        let prod = [
+            ("DWC_ENV", "production"),
+            ("DWC_DB_PATH", "/var/lib/dwc/br.db"),
+            ("DWC_COUNTRY", "BR"),
+            ("DWC_PUBLIC_ORIGIN", "https://br.example.invalid"),
+            ("DWC_SECRET_KEY_FILE", "/etc/dwc/key"),
+            ("DWC_IDENTITY_PROVIDER", "face-service"),
+            ("DWC_FACE_SERVICE_URL", "http://127.0.0.1:8001"),
+            ("DWC_FACE_SERVICE_KEY_FILE", "/etc/dwc/face.key"),
+            ("DWC_AUDIT_SIGNING_KEY_FILE", "/etc/dwc/audit.key"),
+            ("DWC_DEBUG", "1"),
+        ];
+        assert!(matches!(
+            cfg(&prod),
+            Err(ConfigError::Invalid("DWC_DEBUG", _))
         ));
     }
 

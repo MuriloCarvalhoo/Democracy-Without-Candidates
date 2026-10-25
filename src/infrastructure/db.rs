@@ -6,6 +6,10 @@ use std::{path::Path, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use turso::{Builder, Connection, Database, Row};
 
+/// Transient lock contention (e.g. a checkpoint while a request reads) is
+/// retried by the engine for up to this long before `Busy` reaches the caller.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct Db {
     database: Database,
@@ -22,6 +26,7 @@ impl Db {
             .ok_or_else(|| turso::Error::Misuse("non UTF-8 database path".into()))?;
         let database = Builder::new_local(path).build().await?;
         let writer = database.connect()?;
+        writer.busy_timeout(BUSY_TIMEOUT)?;
         writer.execute("PRAGMA foreign_keys = ON", ()).await?;
         Ok(Self {
             database,
@@ -32,6 +37,7 @@ impl Db {
     /// New read connection with a consistent snapshot per statement/transaction.
     pub async fn read(&self) -> Result<Connection, turso::Error> {
         let conn = self.database.connect()?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute("PRAGMA foreign_keys = ON", ()).await?;
         Ok(conn)
     }
@@ -116,5 +122,74 @@ pub mod testing {
             .await
             .expect("migrate");
         TestDb { db, dir }
+    }
+}
+
+#[cfg(test)]
+mod concurrency_tests {
+    use super::*;
+
+    /// Regression: page loads issue several reads in parallel while background
+    /// tasks (phase ticker, reminders, session touch) write. No read or write may
+    /// fail with a transient lock error under that load.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn parallel_reads_and_writes_do_not_fail_with_busy() {
+        let t = testing::migrated().await;
+        let db = t.db.clone();
+        let mut tasks = Vec::new();
+        for w in 0..4 {
+            let db = db.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut errors = Vec::new();
+                for i in 0..150 {
+                    let r: Result<(), turso::Error> = async {
+                        let tx = db.write().await?;
+                        tx.execute(
+                            "INSERT INTO synthetic_counter (id, value, updated_at) VALUES (1, 1, ?1)
+                             ON CONFLICT(id) DO UPDATE SET value = value + 1, updated_at = excluded.updated_at",
+                            [format!("w{w}-{i}")],
+                        )
+                        .await?;
+                        tx.commit().await
+                    }
+                    .await;
+                    if let Err(e) = r {
+                        errors.push(format!("write: {e}"));
+                    }
+                }
+                errors
+            }));
+        }
+        for _ in 0..16 {
+            let db = db.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut errors = Vec::new();
+                for _ in 0..150 {
+                    let r: Result<(), turso::Error> = async {
+                        let conn = db.read().await?;
+                        // First row only: the statement stays open like `query_opt`.
+                        let _ = query_opt(&conn, "SELECT value FROM synthetic_counter", ()).await?;
+                        let _ =
+                            query_all(&conn, "SELECT id FROM jurisdictions LIMIT 5", ()).await?;
+                        Ok(())
+                    }
+                    .await;
+                    if let Err(e) = r {
+                        errors.push(format!("read: {e}"));
+                    }
+                }
+                errors
+            }));
+        }
+        let mut errors = Vec::new();
+        for task in tasks {
+            errors.extend(task.await.unwrap());
+        }
+        assert!(
+            errors.is_empty(),
+            "{} errors, first: {:?}",
+            errors.len(),
+            errors.first()
+        );
     }
 }

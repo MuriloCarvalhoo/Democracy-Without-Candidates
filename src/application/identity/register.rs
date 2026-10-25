@@ -33,6 +33,7 @@ pub struct Territory {
 
 /// Resolves the municipality without fuzzy matching. Absence, ambiguity or a UF
 /// inconsistent with the IBGE code blocks registration.
+#[tracing::instrument(level = "debug", skip_all, fields(country_code = %country_code), err(level = "debug"))]
 pub async fn resolve_territory(
     conn: &Connection,
     address: &CepAddress,
@@ -75,6 +76,7 @@ pub async fn resolve_territory(
 }
 
 /// Address lookup + territory check, used by the CEP search and by registration.
+#[tracing::instrument(level = "debug", skip_all, fields(country_code = %country_code), err(level = "debug"))]
 pub async fn lookup(
     deps: &Deps<'_>,
     provider: Option<&AddressProvider>,
@@ -102,6 +104,7 @@ pub struct Registered {
 
 /// Creates a pending account (no policies; `Cidadao` is attached on enrollment)
 /// and a session to continue with face + TOTP enrollment.
+#[tracing::instrument(level = "debug", skip_all, fields(country_code = %country_code), err(level = "debug"))]
 pub async fn register(
     deps: &Deps<'_>,
     provider: Option<&AddressProvider>,

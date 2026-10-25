@@ -10,6 +10,10 @@ use crate::{error::AppError, features::ui::ErrorNotice, i18n::t};
 
 /// True when the instance uses the synthetic face provider (never in production).
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn face_mode() -> Result<bool, AppError> {
     Ok(crate::server::context::state()?.face.is_synthetic())
 }
@@ -17,6 +21,7 @@ pub async fn face_mode() -> Result<bool, AppError> {
 /// New single-use challenge. `flow` is `session` (signed-in account) or `auth`
 /// (login/password reset in progress, bound to the auth cookie).
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(flow = %flow), err(level = "debug")))]
 pub async fn face_challenge(flow: String) -> Result<String, AppError> {
     use crate::{
         application::identity::{auth::auth_subject, issue_face_challenge, user_subject},
@@ -93,7 +98,7 @@ pub fn FaceCapture(
         error.set(None);
         spawn_local(async move {
             let result = face_challenge(flow.to_owned()).await;
-            // Before `on_capture`: the parent may unmount this component.
+            // Before `on_capture`: it may change the parent step and dispose this widget.
             busy.set(false);
             match result {
                 Ok(challenge) => on_capture.run(FaceCaptured {
@@ -119,6 +124,14 @@ pub fn FaceCapture(
     }
 }
 
+/// The derived `disabled` signal belongs to the parent's branch: when a step
+/// change unmounts the widget, a queued attribute update may still run after
+/// that branch is disposed. Reading it with `get` panicked and stopped the whole
+/// app (face -> TOTP step); a disposed signal now reads as disabled.
+fn is_disabled(disabled: Signal<bool>) -> bool {
+    disabled.try_get().unwrap_or(true)
+}
+
 #[component]
 fn SyntheticFace(
     deliver: impl Fn(String) + Copy + Send + Sync + 'static,
@@ -141,7 +154,7 @@ fn SyntheticFace(
                 <input type="text" autocomplete="off" data-testid="face-phrase" bind:value=phrase/>
             </label>
             <button type="button" data-testid="face-synthetic" on:click=use_face
-                disabled=move || disabled.get() || phrase.get().trim().is_empty()>
+                disabled=move || is_disabled(disabled) || phrase.get().trim().is_empty()>
                 {t("face.synthetic.use")}
             </button>
         </fieldset>
@@ -221,12 +234,12 @@ fn CameraFace(
             <div class="row">
                 <Show when=move || state.get() != CameraState::Live>
                     <button type="button" data-testid="camera-start" on:click=start
-                        disabled=move || disabled.get() || state.get() == CameraState::Starting>
+                        disabled=move || is_disabled(disabled) || state.get() == CameraState::Starting>
                         {t("face.camera.start")}
                     </button>
                 </Show>
                 <Show when=move || state.get() == CameraState::Live>
-                    <button type="button" data-testid="camera-capture" on:click=capture disabled=move || disabled.get()>
+                    <button type="button" data-testid="camera-capture" on:click=capture disabled=move || is_disabled(disabled)>
                         {t("face.camera.capture")}
                     </button>
                 </Show>

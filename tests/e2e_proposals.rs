@@ -4,8 +4,9 @@
 
 mod support;
 
+use dwc::infrastructure::db::Db;
 use fantoccini::Locator;
-use support::{App, Browser, http_get, http_post, seed_dev};
+use support::{App, Browser, http_get, http_post, seed_dev, session_for, use_session};
 
 #[tokio::test]
 #[ignore = "requires built app and chromedriver; run with `just e2e`"]
@@ -161,6 +162,71 @@ async fn visitor_lists_filters_and_reads_seeded_proposals() {
     browser
         .wait_text("main", |t| t.contains("Plano emergencial contra enchentes"))
         .await;
+    browser.close().await;
+}
+
+/// The detail aside never shows an empty action card: a signed-in viewer outside
+/// the electorate gets the eligibility notice and no actions container.
+#[tokio::test]
+#[ignore = "requires built app and chromedriver; run with `just e2e`"]
+async fn viewer_without_actions_sees_no_empty_action_card() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("e2e.db");
+    seed_dev(&db);
+    let (outsider, citizen) = {
+        let db = Db::open(&db).await.unwrap();
+        (
+            session_for(&db, "master@dev.invalid").await,
+            session_for(&db, "ana@dev.invalid").await,
+        )
+    };
+    let app = App::start(&db, &[]);
+    let browser = Browser::start().await;
+    let empty_cards = "return [...document.querySelectorAll('.detail-side > *')]\
+        .filter(e => e.textContent.trim() === '').length;";
+
+    browser
+        .goto_hydrated(&app.url("/propostas?status=collecting_signatures"))
+        .await;
+    browser
+        .wait_text("[data-testid=proposal-total]", |t| !t.is_empty())
+        .await;
+    let href = browser
+        .client
+        .execute(
+            "return [...document.querySelectorAll('[data-testid=proposal-item] h3 a')]\
+                .find(a => a.textContent.includes('Ciclovia')).getAttribute('href');",
+            vec![],
+        )
+        .await
+        .unwrap();
+    let detail = app.url(href.as_str().expect("ciclovia link"));
+
+    for (token, eligible) in [(outsider, false), (citizen, true)] {
+        use_session(&browser, &app, &token).await;
+        browser.goto_hydrated(&detail).await;
+        browser
+            .wait_text("[data-testid=proposal-title]", |t| t.contains("Ciclovia"))
+            .await;
+        let head = browser.text_of(".proposal-head").await;
+        assert_eq!(!head.contains("eleitorado"), eligible, "{head}");
+        let empty = browser.client.execute(empty_cards, vec![]).await.unwrap();
+        assert_eq!(empty, serde_json::json!(0), "eligible={eligible}");
+        let actions = browser
+            .client
+            .find(Locator::Css(".detail-side .card.actions"))
+            .await
+            .is_ok();
+        assert_eq!(actions, eligible, "action card shown only with actions");
+    }
+    // `use_session` opens /healthz (JSON), whose implicit favicon request 404s.
+    let errors: Vec<String> = browser
+        .console_errors()
+        .await
+        .into_iter()
+        .filter(|e| !e.contains("/favicon.ico"))
+        .collect();
+    assert!(errors.is_empty(), "{errors:#?}");
     browser.close().await;
 }
 

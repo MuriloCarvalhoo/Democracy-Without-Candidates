@@ -302,6 +302,19 @@ pub mod view {
         pub can_archive: bool,
     }
 
+    impl ViewerState {
+        /// Whether the action card has anything to show (else it is not rendered).
+        pub fn has_actions(&self) -> bool {
+            self.has_signed
+                || self.can_sign
+                || self.can_withdraw_signature
+                || self.can_edit
+                || self.can_publish
+                || self.can_withdraw
+                || self.can_archive
+        }
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct ProposalDetail {
         pub summary: ProposalSummary,
@@ -403,6 +416,44 @@ mod tests {
     use super::*;
     use ProposalStatus::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn viewer_has_actions_only_when_something_is_allowed_or_signed() {
+        let none = view::ViewerState {
+            is_author: false,
+            eligible: false,
+            has_signed: false,
+            can_sign: false,
+            can_withdraw_signature: false,
+            can_edit: false,
+            can_publish: false,
+            can_withdraw: false,
+            can_archive: false,
+        };
+        assert!(!none.has_actions());
+        // Being the author or eligible alone shows nothing to act on.
+        let author = view::ViewerState {
+            is_author: true,
+            eligible: true,
+            ..none.clone()
+        };
+        assert!(!author.has_actions());
+        let mut each = Vec::new();
+        for set in [
+            |v: &mut view::ViewerState| v.has_signed = true,
+            |v: &mut view::ViewerState| v.can_sign = true,
+            |v: &mut view::ViewerState| v.can_withdraw_signature = true,
+            |v: &mut view::ViewerState| v.can_edit = true,
+            |v: &mut view::ViewerState| v.can_publish = true,
+            |v: &mut view::ViewerState| v.can_withdraw = true,
+            |v: &mut view::ViewerState| v.can_archive = true,
+        ] {
+            let mut v = none.clone();
+            set(&mut v);
+            each.push(v.has_actions());
+        }
+        assert!(each.into_iter().all(|shown| shown));
+    }
 
     #[test]
     fn enums_round_trip_db_values() {

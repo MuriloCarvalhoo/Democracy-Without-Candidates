@@ -41,7 +41,9 @@
 - Migrations are append-only files registered in `src/infrastructure/migrations.rs` (checksums); never edit an applied migration.
 - Compile both the SSR server and browser WASM targets. Native Rust tests alone do not validate hydration or browser behavior.
 - Test critical rules with Rust tests and persistence with the actual TursoDB engine in isolated disposable databases.
+- Definition of done for every feature or hotfix (user rule, 2026-10-25): TDD first (failing test, then fix) **and** validation of the affected flow in a real browser (hydrated page, console/network checked, screenshot). Not finished without both.
 - Run affected user flows in a real browser. Capture useful evidence, console/network failures and accessibility issues; add reproducible E2E regression tests for critical flows.
+- Parallel agents: one git worktree each, own database file (temporary directory, never `data/dev.db`) and own port (`LEPTOS_SITE_ADDR`, never 3000; E2E already picks free ports). Do not drive the user's Chrome from parallel agents; use headless Chrome/chromedriver.
 - Run load tests against a release build with synthetic identities and isolated test data. Check database integrity after load, not only HTTP latency.
 
 ## Development boundaries

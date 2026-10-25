@@ -28,6 +28,7 @@ use crate::{
 /// Same message whether the account is missing, inactive or the email is invalid.
 const ACCOUNT_NOT_ELIGIBLE: &str = "Conta não encontrada ou não elegível.";
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn overview(
     db: &Db,
     actor: &Actor,
@@ -122,6 +123,7 @@ fn db_bytes(path: &Path) -> u64 {
         .sum()
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, key = %key, enabled = %enabled), err(level = "debug"))]
 pub async fn set_flag(
     db: &Db,
     now: DateTime<Utc>,
@@ -148,6 +150,7 @@ pub async fn set_flag(
     Ok(())
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn list_auditors(db: &Db, actor: &Actor) -> Result<Vec<AuditorView>, AppError> {
     actor.require(Permission::AuditorsManage)?;
     let conn = db.read().await?;
@@ -169,6 +172,7 @@ pub async fn list_auditors(db: &Db, actor: &Actor) -> Result<Vec<AuditorView>, A
     Ok(out)
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn grant_auditor(
     db: &Db,
     now: DateTime<Utc>,
@@ -179,6 +183,7 @@ pub async fn grant_auditor(
     grant_role(db, now, email, Role::Auditor, &actor.user_id).await
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn revoke_auditor(
     db: &Db,
     now: DateTime<Utc>,
@@ -216,6 +221,7 @@ pub async fn revoke_auditor(
 
 /// Operator bootstrap from the VPS shell (`dwc grant-admin <email>`); not exposed
 /// over HTTP. The account must already exist and be active.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn grant_country_admin(db: &Db, now: DateTime<Utc>, email: &str) -> Result<(), AppError> {
     grant_role(db, now, email, Role::CountryAdmin, "operator:cli").await
 }

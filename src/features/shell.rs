@@ -36,6 +36,10 @@ impl Instance {
 
 /// Public instance state. Does not renew session activity.
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn instance_info() -> Result<Instance, AppError> {
     use crate::{
         domain::identity::{AccountStatus, Role},

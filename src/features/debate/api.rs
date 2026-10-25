@@ -47,6 +47,7 @@ mod srv {
 }
 
 #[server(endpoint = "debate/thread")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id, page = ?page), err(level = "debug")))]
 pub async fn get_debate(id: String, page: Option<u32>) -> Result<DebateView, AppError> {
     use crate::{application::debate as app, server::context};
     srv::check_id(&id)?;
@@ -66,6 +67,7 @@ pub async fn get_debate(id: String, page: Option<u32>) -> Result<DebateView, App
 }
 
 #[server(endpoint = "debate/comment")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id, parent_id = ?parent_id), err(level = "debug")))]
 pub async fn post_comment(
     id: String,
     parent_id: Option<String>,
@@ -90,6 +92,7 @@ pub async fn post_comment(
 }
 
 #[server(endpoint = "debate/edit")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(comment_id = %comment_id), err(level = "debug")))]
 pub async fn edit_comment(comment_id: String, body: String) -> Result<(), AppError> {
     use crate::{application::debate as app, server::context};
     srv::check_id(&comment_id)?;
@@ -100,6 +103,7 @@ pub async fn edit_comment(comment_id: String, body: String) -> Result<(), AppErr
 }
 
 #[server(endpoint = "debate/history")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(comment_id = %comment_id), err(level = "debug")))]
 pub async fn comment_history(comment_id: String) -> Result<Vec<Revision>, AppError> {
     use crate::{application::debate as app, server::context};
     srv::check_id(&comment_id)?;
@@ -116,6 +120,7 @@ pub async fn comment_history(comment_id: String) -> Result<Vec<Revision>, AppErr
 }
 
 #[server(endpoint = "debate/report")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(comment_id = %comment_id, reason = ?reason), err(level = "debug")))]
 pub async fn report_comment(
     comment_id: String,
     reason: ReportReason,
@@ -129,6 +134,7 @@ pub async fn report_comment(
 }
 
 #[server(endpoint = "debate/moderate")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(comment_id = %comment_id, decision = ?decision), err(level = "debug")))]
 pub async fn moderate_comment(
     comment_id: String,
     decision: ModerationDecision,
@@ -149,6 +155,7 @@ pub async fn moderate_comment(
 }
 
 #[server(endpoint = "debate/lock")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id, locked = %locked), err(level = "debug")))]
 pub async fn set_debate_lock(id: String, locked: bool, reason: String) -> Result<(), AppError> {
     use crate::{application::debate as app, server::context};
     srv::check_id(&id)?;
@@ -158,6 +165,7 @@ pub async fn set_debate_lock(id: String, locked: bool, reason: String) -> Result
 }
 
 #[server(endpoint = "debate/amendments")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn get_amendments(id: String) -> Result<AmendmentsView, AppError> {
     use crate::{application::debate as app, server::context};
     srv::check_id(&id)?;
@@ -176,6 +184,7 @@ pub async fn get_amendments(id: String) -> Result<AmendmentsView, AppError> {
 }
 
 #[server(endpoint = "debate/amend")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn propose_amendment(
     id: String,
     title: String,
@@ -190,6 +199,7 @@ pub async fn propose_amendment(
 }
 
 #[server(endpoint = "debate/amendment_change")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(amendment_id = %amendment_id), err(level = "debug")))]
 pub async fn change_amendment(
     amendment_id: String,
     change: AmendmentChange,
@@ -203,6 +213,10 @@ pub async fn change_amendment(
 }
 
 #[server(endpoint = "debate/moderation_queue")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn moderation_queue() -> Result<Vec<ReportedComment>, AppError> {
     use crate::{application::debate as app, server::context};
     let state = context::state()?;

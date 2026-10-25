@@ -29,6 +29,10 @@ pub struct TotpSetup {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn enrollment_status() -> Result<EnrollmentView, AppError> {
     use crate::{application::identity::enroll, domain::identity::AccountStatus, server::context};
     let state = context::state()?;
@@ -43,6 +47,10 @@ pub async fn enrollment_status() -> Result<EnrollmentView, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn submit_face_enrollment(challenge: String, image_b64: String) -> Result<(), AppError> {
     use crate::{
         application::identity::{FaceProof, enroll},
@@ -64,6 +72,10 @@ pub async fn submit_face_enrollment(challenge: String, image_b64: String) -> Res
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn start_totp_enrollment() -> Result<TotpSetup, AppError> {
     use crate::{application::identity::enroll, server::context};
     let state = context::state()?;
@@ -78,6 +90,10 @@ pub async fn start_totp_enrollment() -> Result<TotpSetup, AppError> {
 
 /// Returns the recovery codes on first enrollment (shown once).
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn confirm_totp_enrollment(code: String) -> Result<Option<Vec<String>>, AppError> {
     use crate::{application::identity::enroll, features::face::bounded, server::context};
     let state = context::state()?;

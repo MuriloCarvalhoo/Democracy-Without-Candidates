@@ -202,3 +202,59 @@ async fn privacy_change_needs_reauth_and_login_uses_auth_cookie() {
         "no session before face + TOTP"
     );
 }
+
+/// The login endpoint is traced in debug mode (with request id and path) but
+/// its inputs (e-mail, password) and the auth cookie never reach the log.
+#[tokio::test]
+async fn debug_trace_of_login_endpoint_omits_credentials() {
+    let w = World::new().await;
+    let app = app(&w).await;
+    enrolled(&w, "ana@example.org").await;
+    let (_guard, out) = super::observability::testing::capture("dwc=debug,tower_http=debug");
+    let r = call(
+        &app,
+        LoginStart::PATH,
+        "email=ana%40example.org&password=senha+de+teste+longa",
+        None,
+        ORIGIN,
+    )
+    .await;
+    assert!(r.status.is_success(), "{}", r.body);
+    let auth = r.cookies[0]
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("dwc_auth=");
+    let text = out.text();
+    assert!(
+        text.contains("login_start") && text.contains("request{id="),
+        "{text}"
+    );
+    for secret in [
+        "ana@example.org",
+        "ana%40example.org",
+        "senha de teste longa",
+        "senha+de+teste+longa",
+        auth,
+    ] {
+        assert!(!text.contains(secret), "{secret} leaked: {text}");
+    }
+}
+
+/// Regression: the 404 fallback rendered the layout without the app state, so
+/// every unknown path (e.g. `/favicon.ico`) logged internal errors and showed
+/// the header as signed out.
+#[tokio::test]
+async fn unknown_path_renders_not_found_with_app_state() {
+    let w = World::new().await;
+    let app = app(&w).await;
+    let (_guard, out) = super::observability::testing::capture("dwc=info");
+    let res = app
+        .clone()
+        .oneshot(Request::get("/nao-existe").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    let text = out.text();
+    assert!(!text.contains("internal error"), "{text}");
+}

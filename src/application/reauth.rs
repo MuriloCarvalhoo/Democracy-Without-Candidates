@@ -12,6 +12,7 @@ use crate::{
 pub const VALIDITY: Duration = Duration::minutes(5);
 
 /// Records a grant after face + TOTP were verified by the identity use case.
+#[tracing::instrument(level = "debug", skip_all, fields(action = %action, resource = %resource), err(level = "debug"))]
 pub async fn grant(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -30,6 +31,7 @@ pub async fn grant(
 
 /// Consumes one valid grant or fails with `ReauthRequired`. Call inside the same
 /// write transaction as the protected effect so a rollback restores the grant.
+#[tracing::instrument(level = "debug", skip_all, fields(action = %action, resource = %resource), err(level = "debug"))]
 pub async fn consume(
     conn: &Connection,
     now: DateTime<Utc>,

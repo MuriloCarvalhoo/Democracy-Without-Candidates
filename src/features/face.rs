@@ -10,6 +10,10 @@ use crate::{error::AppError, features::ui::ErrorNotice, i18n::t};
 
 /// True when the instance uses the synthetic face provider (never in production).
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn face_mode() -> Result<bool, AppError> {
     Ok(crate::server::context::state()?.face.is_synthetic())
 }
@@ -17,6 +21,7 @@ pub async fn face_mode() -> Result<bool, AppError> {
 /// New single-use challenge. `flow` is `session` (signed-in account) or `auth`
 /// (login/password reset in progress, bound to the auth cookie).
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(flow = %flow), err(level = "debug")))]
 pub async fn face_challenge(flow: String) -> Result<String, AppError> {
     use crate::{
         application::identity::{auth::auth_subject, issue_face_challenge, user_subject},

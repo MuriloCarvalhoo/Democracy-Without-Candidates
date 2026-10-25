@@ -71,6 +71,7 @@ fn chain_hash(prev: &str, fields: serde_json::Value) -> String {
 
 /// Appends inside the caller's write transaction so the event commits with the effect.
 /// Payloads with keys naming secrets/biometrics/contact/IP/ballot data are refused.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn append(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -131,6 +132,7 @@ impl From<ChainStatus> for ChainSummary {
 }
 
 /// Recomputes the whole chain. Detects edits/gaps in the local copy only.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn verify(conn: &Connection) -> Result<ChainStatus, AppError> {
     walk(conn, 0, GENESIS, i64::MAX, &mut Kinds::new()).await
 }
@@ -221,6 +223,7 @@ pub struct ChainCache(tokio::sync::Mutex<Option<Verified>>);
 /// Chain status for display. Incremental between full recomputations, so the
 /// cost per request is proportional to new events. A rewrite of already verified
 /// rows is detected at the next full pass (and at every process start).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn summary(
     conn: &Connection,
     cache: &ChainCache,
@@ -271,6 +274,7 @@ pub enum Scope {
 }
 
 /// Newest-first page of events with `seq < before`, optionally of one kind.
+#[tracing::instrument(level = "debug", skip_all, fields(scope = ?scope, kind = ?kind, before = ?before), err(level = "debug"))]
 pub async fn list(
     conn: &Connection,
     scope: Scope,
@@ -317,6 +321,7 @@ pub async fn list(
 }
 
 /// Distinct kinds visible in `scope`, for the filter.
+#[tracing::instrument(level = "debug", skip_all, fields(scope = ?scope), err(level = "debug"))]
 pub async fn kinds(conn: &Connection, scope: Scope) -> Result<Vec<String>, AppError> {
     let sql = match scope {
         Scope::Public => {
@@ -334,6 +339,7 @@ pub async fn kinds(conn: &Connection, scope: Scope) -> Result<Vec<String>, AppEr
 /// Restricted read for auditors/country admins. The access itself is appended
 /// (and committed) before any restricted data is returned; if that fails, the
 /// read is denied.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, kind = ?kind, before = ?before), err(level = "debug"))]
 pub async fn read_restricted(
     db: &Db,
     now: DateTime<Utc>,

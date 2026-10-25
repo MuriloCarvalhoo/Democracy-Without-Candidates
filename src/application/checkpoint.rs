@@ -19,6 +19,7 @@ use crate::{
 };
 
 /// Verifies the full chain, signs its head and records the checkpoint row.
+#[tracing::instrument(level = "debug", skip_all, fields(country = %country), err(level = "debug"))]
 pub async fn create(
     db: &Db,
     key: &SigningKey,
@@ -85,6 +86,7 @@ pub enum CheckpointCheck {
     },
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(country = %country), err(level = "debug"))]
 pub async fn verify(
     conn: &Connection,
     checkpoint: &Checkpoint,
@@ -120,6 +122,7 @@ pub async fn verify(
 }
 
 /// Most recent recorded checkpoints, newest first.
+#[tracing::instrument(level = "debug", skip_all, fields(country = %country, limit = %limit), err(level = "debug"))]
 pub async fn latest(
     conn: &Connection,
     country: &str,

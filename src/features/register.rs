@@ -23,6 +23,10 @@ pub struct AddressView {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn lookup_cep(cep: String) -> Result<AddressView, AppError> {
     use crate::{application::identity::register, features::face::bounded, server::context};
     let state = context::state()?;
@@ -45,6 +49,10 @@ pub async fn lookup_cep(cep: String) -> Result<AddressView, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn register_account(
     name: String,
     email: String,

@@ -42,6 +42,7 @@ impl Actor {
     }
 }
 
+#[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id), err(level = "debug"))]
 pub async fn load(
     conn: &turso::Connection,
     user_id: &str,
@@ -70,7 +71,8 @@ pub async fn load(
         user_id: user_id.to_owned(),
         session_hash: session_hash.to_owned(),
         name: row.get(0)?,
-        status: AccountStatus::from_db(&status).ok_or(AppError::Internal)?,
+        status: AccountStatus::from_db(&status)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
         roles,
         municipality_id: row.get(2)?,
         state_id: row.get(3)?,

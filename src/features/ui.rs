@@ -6,6 +6,7 @@ use crate::{error::AppError, i18n::t};
 
 #[component]
 pub fn ErrorNotice(error: AppError) -> impl IntoView {
+    crate::client_errors::report_app_error(&error);
     view! { <p class="notice error" role="alert">{error.user_message()}</p> }
 }
 

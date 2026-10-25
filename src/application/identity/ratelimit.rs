@@ -103,6 +103,7 @@ async fn count(
     .unwrap_or(0))
 }
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn check(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -123,6 +124,7 @@ pub async fn check(
 #[must_use]
 pub struct Attempt(Vec<String>);
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn record_failure(
     conn: &Connection,
     now: DateTime<Utc>,
@@ -152,6 +154,7 @@ pub async fn record_failure(
 
 /// Checks the limits and records the attempt as a failure in one write
 /// transaction, before the factor is verified.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn reserve(db: &Db, now: DateTime<Utc>, keys: &ClientKeys) -> Result<Attempt, AppError> {
     let tx = db.write().await?;
     check(&tx, now, keys).await?;
@@ -161,6 +164,7 @@ pub async fn reserve(db: &Db, now: DateTime<Utc>, keys: &ClientKeys) -> Result<A
 }
 
 /// Removes a reserved attempt (verification succeeded or could not run).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn release(conn: &Connection, attempt: Attempt) -> Result<(), AppError> {
     for id in attempt.0 {
         conn.execute("DELETE FROM auth_failures WHERE id = ?1", [id])
@@ -170,6 +174,7 @@ pub async fn release(conn: &Connection, attempt: Attempt) -> Result<(), AppError
 }
 
 /// Clears account failures after a complete successful authentication.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn clear_account(conn: &Connection, keys: &ClientKeys) -> Result<(), AppError> {
     conn.execute(
         "DELETE FROM auth_failures WHERE scope = 'account' AND key = ?1",

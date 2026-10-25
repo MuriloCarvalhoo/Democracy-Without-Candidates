@@ -83,7 +83,7 @@ pub async fn seed_dev(db: &Db, config: &Config) -> Result<Vec<String>, AppError>
 /// Active synthetic accounts with face (phrase) + TOTP enrolled. Idempotent.
 pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, AppError> {
     let totp_secret = totp_rs::Secret::try_from_base32(DEV_TOTP_SECRET)
-        .map_err(|_| AppError::Internal)?
+        .map_err(AppError::internal)?
         .as_bytes()
         .to_vec();
     let template = FaceVerifier::Synthetic
@@ -237,7 +237,7 @@ async fn seed_legislative(
         async move {
             actor::load(&db.read().await?, &id, &hash)
                 .await?
-                .ok_or(AppError::Internal)
+                .ok_or_else(|| AppError::internal("missing or invalid stored value"))
         }
     };
     let grant = |hash: String, action: &'static str, id: String, at| async move {
@@ -392,7 +392,7 @@ async fn seed_legislative(
         ids.iter()
             .find(|(t, _)| t.starts_with(prefix))
             .map(|(_, id)| id.clone())
-            .ok_or(AppError::Internal)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))
     };
     done.push(
         seed_debate(
@@ -569,7 +569,7 @@ pub async fn seed_load(db: &Db, config: &Config, n: usize) -> Result<serde_json:
     let author_hash = session::token_hash(author_token);
     let author = actor::load(&db.read().await?, author_id, &author_hash)
         .await?
-        .ok_or(AppError::Internal)?;
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let publish = |kind: ProposalKind, title: String| {
         let (ctx, author, hash) = (&ctx, &author, author_hash.clone());
         async move {
@@ -608,7 +608,9 @@ pub async fn seed_load(db: &Db, config: &Config, n: usize) -> Result<serde_json:
     tx.commit().await?;
     let state = signatures::sign(&ctx, &author, &id, None).await?;
     if state.status != crate::domain::proposals::ProposalStatus::InVoting {
-        return Err(AppError::Internal);
+        return Err(AppError::internal(
+            "seed-load proposal did not reach voting",
+        ));
     }
     let tx = db.write().await?;
     for (_, token) in &accounts[..n] {

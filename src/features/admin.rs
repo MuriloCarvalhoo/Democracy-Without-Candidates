@@ -13,6 +13,10 @@ use crate::{
 };
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn load_admin_overview() -> Result<AdminOverview, AppError> {
     use crate::{application::admin, server::context};
     let state = context::state()?;
@@ -21,6 +25,7 @@ pub async fn load_admin_overview() -> Result<AdminOverview, AppError> {
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(enabled = %enabled), err(level = "debug")))]
 pub async fn set_feature_flag(key: String, enabled: bool) -> Result<(), AppError> {
     use crate::{application::admin, server::context};
     let state = context::state()?;
@@ -29,6 +34,10 @@ pub async fn set_feature_flag(key: String, enabled: bool) -> Result<(), AppError
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn load_auditors() -> Result<Vec<AuditorView>, AppError> {
     use crate::{application::admin, server::context};
     let state = context::state()?;
@@ -37,6 +46,10 @@ pub async fn load_auditors() -> Result<Vec<AuditorView>, AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn grant_auditor_role(email: String) -> Result<(), AppError> {
     use crate::{application::admin, server::context};
     let state = context::state()?;
@@ -45,6 +58,10 @@ pub async fn grant_auditor_role(email: String) -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn revoke_auditor_role(email: String) -> Result<(), AppError> {
     use crate::{application::admin, server::context};
     let state = context::state()?;

@@ -18,8 +18,12 @@ use crate::app::{App, shell};
 pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
     let routes = generate_route_list(App);
     let ctx_state = state.clone();
-    Router::new()
+    let fallback_state = state.clone();
+    let router = Router::new()
         .route("/healthz", get(health))
+        .merge(super::observability::client_log_routes(
+            state.config.is_production(),
+        ))
         .route(
             "/propostas/{id}/exportar",
             get(crate::features::proposals::api::export_handler),
@@ -33,7 +37,11 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
                 move || shell(leptos_options.clone())
             },
         )
-        .fallback(leptos_axum::file_and_error_handler(shell))
+        // The 404 page renders the same layout, so it needs the same context.
+        .fallback(leptos_axum::file_and_error_handler_with_context(
+            move || provide_context(fallback_state.clone()),
+            shell,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             csrf_and_headers,
@@ -42,7 +50,8 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
             2 * 1024 * 1024,
         ))
         .with_state(leptos_options)
-        .layer(axum::Extension(state))
+        .layer(axum::Extension(state));
+    super::observability::layer(router)
 }
 
 /// Readiness: database answers a query. No private details in the body.

@@ -21,6 +21,7 @@ use crate::{
     },
 };
 
+#[tracing::instrument(level = "debug", skip_all, fields(viewer = ?viewer.map(|a| a.user_id.as_str())), err(level = "debug"))]
 pub async fn overview(
     conn: &Connection,
     tz: chrono_tz::Tz,
@@ -60,6 +61,7 @@ pub async fn overview(
 
 /// Starts the national plebiscite with the suggested package. Only one may be
 /// open; a new one only after rejection or quorum failure (no adopted setup).
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn start(
     db: &Db,
     flags: &Flags,
@@ -81,6 +83,7 @@ pub async fn start(
 
 /// Current effective parameters of the proposal's jurisdiction vs the package
 /// proposed by a meta-law (or plebiscite).
+#[tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug"))]
 pub async fn diff(conn: &Connection, id: &str) -> Result<SetupDiff, AppError> {
     let p = proposals::load(conn, id).await?.ok_or(AppError::NotFound)?;
     if p.status == ProposalStatus::Draft
@@ -93,10 +96,12 @@ pub async fn diff(conn: &Connection, id: &str) -> Result<SetupDiff, AppError> {
     }
     let proposed = setup::get(
         conn,
-        p.proposed_setup_id.as_deref().ok_or(AppError::Internal)?,
+        p.proposed_setup_id
+            .as_deref()
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
     )
     .await?
-    .ok_or(AppError::Internal)?;
+    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     // Once approved, the package itself is effective: no "current" to compare.
     let current = setup::effective_setup(conn, &p.jurisdiction_id)
         .await?

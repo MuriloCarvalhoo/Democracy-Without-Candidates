@@ -1182,6 +1182,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "turso",
+ "url",
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -4862,7 +4863,9 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

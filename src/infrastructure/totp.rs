@@ -21,7 +21,7 @@ fn totp(secret: &[u8], account: &str) -> Result<Totp, AppError> {
         .with_account_name(account.replace(':', ""))
         .with_issuer(Some(ISSUER))
         .build()
-        .map_err(|_| AppError::Internal)
+        .map_err(AppError::internal)
 }
 
 /// Accepted step for `code` at `now_unix`, if it is newer than `last_step`.
@@ -52,14 +52,14 @@ pub struct Provisioning {
 
 pub fn provisioning(secret: &[u8], account: &str) -> Result<Provisioning, AppError> {
     let t = totp(secret, account)?;
-    let uri = t.to_url().map_err(|_| AppError::Internal)?;
+    let uri = t.to_url().map_err(AppError::internal)?;
     let qr_svg = qrcode::QrCode::new(uri.as_bytes())
         .map(|code| {
             code.render::<qrcode::render::svg::Color>()
                 .min_dimensions(200, 200)
                 .build()
         })
-        .map_err(|_| AppError::Internal)?;
+        .map_err(AppError::internal)?;
     Ok(Provisioning {
         secret_base32: Secret::from(secret.to_vec()).to_base32(),
         otpauth_uri: uri,

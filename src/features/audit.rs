@@ -58,6 +58,7 @@ async fn listing(
 
 /// Public events only, without actor references. Does not renew session activity.
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(kind = ?kind, before = ?before), err(level = "debug")))]
 pub async fn public_audit_listing(
     kind: Option<String>,
     before: Option<i64>,
@@ -80,6 +81,7 @@ pub async fn public_audit_listing(
 
 /// Requires `AuditReadRestricted`; the access is appended to the audit log first.
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(kind = ?kind, before = ?before), err(level = "debug")))]
 pub async fn restricted_audit_listing(
     kind: Option<String>,
     before: Option<i64>,

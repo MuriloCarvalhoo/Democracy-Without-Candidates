@@ -117,7 +117,8 @@ async fn load_challenge(
     )
     .await?
     .ok_or_else(step_expired)?;
-    let expires = parse_ts(&row.get::<String>(4)?).ok_or(AppError::Internal)?;
+    let expires = parse_ts(&row.get::<String>(4)?)
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     if deps.now >= expires {
         return Err(step_expired());
     }
@@ -212,11 +213,13 @@ async fn account_by_email(conn: &Connection, email: &str) -> Result<Option<Accou
     Ok(Some(Account {
         id: row.get(0)?,
         password_hash: row.get(1)?,
-        status: AccountStatus::from_db(&row.get::<String>(2)?).ok_or(AppError::Internal)?,
+        status: AccountStatus::from_db(&row.get::<String>(2)?)
+            .ok_or_else(|| AppError::internal("missing or invalid stored value"))?,
     }))
 }
 
 /// Step 1 of login. Returns the auth token (cookie) and the next step.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn login_password(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -267,6 +270,7 @@ pub async fn login_password(
 }
 
 /// Face step for login or password reset.
+#[tracing::instrument(level = "debug", skip_all, fields(purpose = ?purpose), err(level = "debug"))]
 pub async fn auth_face(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -286,7 +290,10 @@ pub async fn auth_face(
             .ok_or_else(|| ("face", face_not_confirmed())))
     })
     .await?;
-    let user_id = c.user_id.as_deref().ok_or(AppError::Internal)?;
+    let user_id = c
+        .user_id
+        .as_deref()
+        .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let conn = deps.db.read().await?;
     let totp_confirmed = credentials(&conn, user_id).await?.totp_secret.is_some();
     let tx = deps.db.write().await?;
@@ -349,6 +356,7 @@ async fn totp_attempt(
 }
 
 /// Final login step with TOTP.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn login_totp(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -387,6 +395,7 @@ async fn consume_recovery_code(
 
 /// Final login step with a recovery code instead of TOTP. Password and face were
 /// already verified; TOTP must be re-enrolled before critical actions.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn login_recovery_code(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -426,6 +435,7 @@ pub async fn login_recovery_code(
 
 /// Step 1 of password reset (no e-mail is sent). Unknown e-mails get a token too,
 /// whose face step always fails, so the response does not reveal accounts.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn reset_start(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -456,6 +466,7 @@ pub async fn reset_start(
 
 /// Final reset step: TOTP + new password. Success revokes every session; any
 /// failure keeps the previous hash. Address and territory are never touched.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn reset_finish(
     deps: &Deps<'_>,
     ip: Option<std::net::IpAddr>,
@@ -492,6 +503,7 @@ pub async fn reset_finish(
 }
 
 /// Signed-in password change: current password + face + TOTP. Revokes all sessions.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn change_password(
     deps: &Deps<'_>,
     actor: &Actor,
@@ -526,6 +538,7 @@ pub async fn change_password(
 }
 
 /// New set of ten recovery codes (password + face + TOTP); previous codes are revoked.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id), err(level = "debug"))]
 pub async fn regenerate_recovery_codes(
     deps: &Deps<'_>,
     actor: &Actor,
@@ -554,6 +567,7 @@ pub async fn regenerate_recovery_codes(
 }
 
 /// Face + TOTP for the current session; records a grant bound to action + resource.
+#[tracing::instrument(level = "debug", skip_all, fields(actor = %actor.user_id, action = %action, resource = %resource), err(level = "debug"))]
 pub async fn reauthenticate(
     deps: &Deps<'_>,
     actor: &Actor,
@@ -595,6 +609,7 @@ pub async fn reauthenticate(
 }
 
 /// Revokes the current session (logout).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn logout(deps: &Deps<'_>, session_hash: &str) -> Result<(), AppError> {
     let tx = deps.db.write().await?;
     session::revoke(&tx, deps.now, session_hash, "logout").await?;
@@ -1236,5 +1251,40 @@ mod tests {
             .await,
             2 * limit as i64
         );
+    }
+
+    /// `DWC_DEBUG` traces the login steps but never the password, face sample,
+    /// TOTP code, e-mail or the auth/session tokens.
+    #[tokio::test]
+    async fn debug_trace_of_login_omits_secrets() {
+        use base64::Engine;
+        let w = World::new().await;
+        let e = enrolled(&w, "ana@example.org").await;
+        let d = w.deps();
+        let (_guard, out) = crate::server::observability::testing::capture("dwc=debug");
+        let (token, _) = login_password(&d, None, &e.email, PASSWORD).await.unwrap();
+        let token = token.unwrap();
+        face_step(&w, &d, &token, Purpose::Login, FACE)
+            .await
+            .unwrap();
+        let code = totp::code_at(&e.totp_secret, w.now.timestamp());
+        let session = login_totp(&d, None, &token, &code).await.unwrap();
+        let text = out.text();
+        for step in ["login_password", "auth_face", "login_totp"] {
+            assert!(text.contains(step), "{step} not traced: {text}");
+        }
+        let face_text = String::from_utf8_lossy(FACE).into_owned();
+        let face_b64 = base64::engine::general_purpose::STANDARD.encode(FACE);
+        for secret in [
+            PASSWORD,
+            face_text.as_str(),
+            face_b64.as_str(),
+            code.as_str(),
+            token.as_str(),
+            session.as_str(),
+            e.email.as_str(),
+        ] {
+            assert!(!text.contains(secret), "{secret} leaked: {text}");
+        }
     }
 }

@@ -33,6 +33,7 @@ pub fn request_hash(parts: &[&str]) -> String {
 }
 
 /// Returns the stored response for a replay, or `None` for a new key.
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn lookup<T: DeserializeOwned>(
     conn: &Connection,
     key: &Key<'_>,
@@ -55,16 +56,17 @@ pub async fn lookup<T: DeserializeOwned>(
     }
     serde_json::from_str(&response)
         .map(Some)
-        .map_err(|_| AppError::Internal)
+        .map_err(AppError::internal)
 }
 
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
 pub async fn store<T: Serialize>(
     conn: &Connection,
     now: DateTime<Utc>,
     key: &Key<'_>,
     response: &T,
 ) -> Result<(), AppError> {
-    let body = serde_json::to_string(response).map_err(|_| AppError::Internal)?;
+    let body = serde_json::to_string(response).map_err(AppError::internal)?;
     conn.execute(
         "INSERT INTO idempotency_keys (user_id, key, action, request_hash, response, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         (key.user_id, key.key, key.action, key.request_hash.as_str(), body, ts(now)),

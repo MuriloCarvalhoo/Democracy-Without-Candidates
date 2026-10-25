@@ -13,6 +13,10 @@ use crate::{
 };
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn change_password(
     current_password: String,
     new_password: String,
@@ -45,6 +49,10 @@ pub async fn change_password(
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn regenerate_codes(
     password: String,
     face_challenge: String,

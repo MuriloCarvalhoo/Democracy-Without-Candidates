@@ -57,6 +57,10 @@ async fn drop_previous_session() -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn login_start(email: String, password: String) -> Result<LoginStep, AppError> {
     use crate::{application::identity::auth, features::face::bounded, server::context};
     let state = context::state()?;
@@ -77,6 +81,10 @@ pub async fn login_start(email: String, password: String) -> Result<LoginStep, A
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn login_face(challenge: String, image_b64: String) -> Result<LoginStep, AppError> {
     auth_face_step(challenge, image_b64, false).await
 }
@@ -120,6 +128,7 @@ async fn auth_face_step(
 }
 
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(recovery = %recovery), err(level = "debug")))]
 pub async fn login_finish(code: String, recovery: bool) -> Result<LoginStep, AppError> {
     use crate::{application::identity::auth, features::face::bounded, server::context};
     let state = context::state()?;
@@ -142,6 +151,10 @@ pub async fn login_finish(code: String, recovery: bool) -> Result<LoginStep, App
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn logout() -> Result<(), AppError> {
     use crate::{
         application::{identity::auth, session::token_hash},
@@ -156,6 +169,10 @@ pub async fn logout() -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn reset_begin(email: String) -> Result<(), AppError> {
     use crate::{application::identity::auth, features::face::bounded, server::context};
     let state = context::state()?;
@@ -170,11 +187,19 @@ pub async fn reset_begin(email: String) -> Result<(), AppError> {
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn reset_face(challenge: String, image_b64: String) -> Result<LoginStep, AppError> {
     auth_face_step(challenge, image_b64, true).await
 }
 
 #[server]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn reset_complete(code: String, new_password: String) -> Result<(), AppError> {
     use crate::{application::identity::auth, features::face::bounded, server::context};
     let state = context::state()?;

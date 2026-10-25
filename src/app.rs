@@ -28,7 +28,16 @@ use crate::{
     i18n::t,
 };
 
+/// Browser error reports (development/test instances only; see
+/// `server::observability`). Advertised to the client through a meta tag.
+pub const CLIENT_LOG_PATH: &str = "/api/client-log";
+
 pub fn shell(options: LeptosOptions) -> impl IntoView {
+    #[cfg(feature = "ssr")]
+    let client_log =
+        use_context::<crate::server::AppState>().is_some_and(|state| !state.config.is_production());
+    #[cfg(not(feature = "ssr"))]
+    let client_log = false;
     view! {
         <!DOCTYPE html>
         <html lang="pt-BR">
@@ -41,6 +50,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <HashedStylesheet id="leptos" options=options.clone()/>
                 <HydrationScripts options/>
                 <MetaTags/>
+                {client_log.then(|| view! { <meta name="dwc-client-log" content=CLIENT_LOG_PATH/> })}
             </head>
             <body>
                 <App/>

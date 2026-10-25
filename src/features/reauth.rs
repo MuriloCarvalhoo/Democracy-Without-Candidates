@@ -14,6 +14,7 @@ use crate::{
 /// Verifies face + TOTP for the current session and records a grant bound to
 /// `action` + `resource` (5 minutes, single use). Failures are rate limited.
 #[server]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(action = %action, resource = %resource), err(level = "debug")))]
 pub async fn request_reauth(
     action: String,
     resource: String,

@@ -26,6 +26,7 @@ use crate::{
 };
 
 #[server(endpoint = "voting/page")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn load_vote_page(id: String) -> Result<VoteData, AppError> {
     use crate::{application::voting, features::proposals::api::srv, server::context};
     srv::check_id(&id)?;
@@ -47,6 +48,7 @@ pub async fn load_vote_page(id: String) -> Result<VoteData, AppError> {
 /// Casts a public ballot. Choice: `yes` | `no` | `abstain`. There is no private
 /// mode in this build; eligibility, deadline and reauth are checked on the server.
 #[server(endpoint = "voting/cast")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id, public_consent = %public_consent), err(level = "debug")))]
 pub async fn cast_vote(
     id: String,
     choice: String,
@@ -73,6 +75,7 @@ pub async fn cast_vote(
 
 /// Own ballot and whether an attempt key produced a stored result (unknown outcome).
 #[server(endpoint = "voting/status")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn check_vote_status(
     id: String,
     idempotency_key: Option<String>,
@@ -92,6 +95,7 @@ pub async fn check_vote_status(
 }
 
 #[server(endpoint = "voting/result")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn load_vote_result(id: String) -> Result<ResultData, AppError> {
     use crate::{application::voting, features::proposals::api::srv, server::context};
     srv::check_id(&id)?;
@@ -108,6 +112,10 @@ pub async fn load_vote_result(id: String) -> Result<ResultData, AppError> {
 }
 
 #[server(endpoint = "setup/overview")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn load_setup_overview() -> Result<SetupOverview, AppError> {
     use crate::{application::plebiscite, features::proposals::api::srv, server::context};
     let state = context::state()?;
@@ -127,6 +135,10 @@ pub async fn load_setup_overview() -> Result<SetupOverview, AppError> {
 
 /// Country admin starts the national plebiscite with the suggested package.
 #[server(endpoint = "setup/start")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn start_plebiscite() -> Result<String, AppError> {
     use crate::{application::plebiscite, server::context};
     let state = context::state()?;
@@ -135,6 +147,7 @@ pub async fn start_plebiscite() -> Result<String, AppError> {
 }
 
 #[server(endpoint = "setup/diff")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(id = %id), err(level = "debug")))]
 pub async fn load_setup_diff(id: String) -> Result<SetupDiff, AppError> {
     use crate::{application::plebiscite, features::proposals::api::srv, server::context};
     srv::check_id(&id)?;
@@ -143,6 +156,10 @@ pub async fn load_setup_diff(id: String) -> Result<SetupDiff, AppError> {
 }
 
 #[server(endpoint = "statistics")]
+#[cfg_attr(
+    feature = "ssr",
+    tracing::instrument(level = "debug", skip_all, err(level = "debug"))
+)]
 pub async fn public_statistics() -> Result<Statistics, AppError> {
     use crate::{application::statistics, features::proposals::api::srv, server::context};
     let state = context::state()?;

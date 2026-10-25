@@ -12,7 +12,8 @@ use crate::{
 };
 
 pub fn state() -> Result<AppState, AppError> {
-    use_context::<AppState>().ok_or(AppError::Internal)
+    use_context::<AppState>()
+        .ok_or_else(|| AppError::internal("AppState not provided to this render/server function"))
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -29,7 +30,7 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 /// Raw session token from the request cookie, if present.
 pub async fn session_token() -> Result<Option<String>, AppError> {
     let state = state()?;
-    let headers: HeaderMap = extract().await.map_err(|_| AppError::Internal)?;
+    let headers: HeaderMap = extract().await.map_err(AppError::internal)?;
     Ok(cookie_value(&headers, state.config.session_cookie_name()))
 }
 
@@ -114,7 +115,7 @@ pub fn clear_auth_cookie() {
 
 pub async fn auth_token() -> Result<Option<String>, AppError> {
     let state = state()?;
-    let headers: HeaderMap = extract().await.map_err(|_| AppError::Internal)?;
+    let headers: HeaderMap = extract().await.map_err(AppError::internal)?;
     Ok(cookie_value(&headers, auth_cookie_name(&state)))
 }
 

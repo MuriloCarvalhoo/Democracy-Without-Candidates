@@ -14,6 +14,9 @@ use fantoccini::{Client, ClientBuilder, Locator};
 
 pub const WAIT: Duration = Duration::from_secs(20);
 
+/// `App::start` extra env key: path of a file receiving the server's stderr.
+pub const STDERR_FILE: &str = "E2E_STDERR_FILE";
+
 pub fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -204,7 +207,17 @@ fn app_command(db_path: &Path, port: u16, env: &[(String, String)]) -> Command {
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
     for (k, v) in env {
-        cmd.env(k, v);
+        // Harness option, not an app setting: append the server log to a file.
+        if k == STDERR_FILE {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(v)
+                .expect("server log file");
+            cmd.stderr(file);
+        } else {
+            cmd.env(k, v);
+        }
     }
     cmd
 }
@@ -243,6 +256,11 @@ impl Browser {
         }
         let mut caps = serde_json::Map::new();
         caps.insert("goog:chromeOptions".into(), chrome);
+        // Browser console entries, read back with `Browser::console`.
+        caps.insert(
+            "goog:loggingPrefs".into(),
+            serde_json::json!({ "browser": "ALL" }),
+        );
         let client = ClientBuilder::rustls()
             .expect("tls")
             .capabilities(caps)
@@ -290,10 +308,57 @@ impl Browser {
         }
     }
 
+    /// Browser console entries since the previous call, as `LEVEL message`
+    /// (chromedriver log endpoint; requires `goog:loggingPrefs`).
+    pub async fn console(&self) -> Vec<String> {
+        let Ok(value) = self.client.issue_cmd(BrowserLog).await else {
+            return Vec::new();
+        };
+        value
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{} {}",
+                            e["level"].as_str().unwrap_or("?"),
+                            e["message"].as_str().unwrap_or("")
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub async fn close(self) {
         let _ = self.client.close().await;
         let mut driver = self.driver;
         let _ = driver.kill();
         let _ = driver.wait();
+    }
+}
+
+/// chromedriver `POST /session/{id}/se/log` for the browser console.
+#[derive(Debug)]
+struct BrowserLog;
+
+impl fantoccini::wd::WebDriverCompatibleCommand for BrowserLog {
+    fn endpoint(
+        &self,
+        base_url: &url::Url,
+        session_id: Option<&str>,
+    ) -> Result<url::Url, url::ParseError> {
+        base_url.join(&format!(
+            "session/{}/se/log",
+            session_id.unwrap_or_default()
+        ))
+    }
+
+    fn method_and_body(&self, _: &url::Url) -> (axum::http::Method, Option<String>) {
+        (
+            axum::http::Method::POST,
+            Some(r#"{"type":"browser"}"#.to_owned()),
+        )
     }
 }

@@ -166,8 +166,14 @@ mod tests {
         b.body(Body::empty()).unwrap()
     }
 
-    async fn status_through_layer(response: fn() -> Response) -> (StatusCode, String) {
+    /// Runs `error` (or a plain 500 when `None`) through the status middleware.
+    async fn status_through_layer(error: Option<AppError>) -> (StatusCode, String) {
+        use leptos::server_fn::{error::FromServerFnError, response::Res};
         use tower::ServiceExt;
+        let response = move || match &error {
+            Some(error) => Response::error_response("/api/x", error.ser()),
+            None => (StatusCode::INTERNAL_SERVER_ERROR, "\"Forbidden\"").into_response(),
+        };
         let app = Router::new()
             .route(
                 "/api/x",
@@ -182,42 +188,22 @@ mod tests {
         (status, String::from_utf8(body.to_vec()).unwrap())
     }
 
-    fn server_fn_error(error: AppError) -> Response {
-        use leptos::server_fn::{error::FromServerFnError, response::Res};
-        Response::error_response("/api/x", error.ser())
-    }
-
     #[tokio::test]
     async fn server_fn_errors_get_their_status_and_keep_the_body() {
-        let cases: [(fn() -> Response, u16, &str); 5] = [
-            (
-                || server_fn_error(AppError::Forbidden),
-                403,
-                "\"Forbidden\"",
-            ),
-            (|| server_fn_error(AppError::NotFound), 404, "\"NotFound\""),
-            (
-                || server_fn_error(AppError::validation("title", "curto")),
-                422,
-                "Validation",
-            ),
-            (
-                || server_fn_error(AppError::RateLimited),
-                429,
-                "RateLimited",
-            ),
-            (|| server_fn_error(AppError::Internal), 500, "Internal"),
+        let cases = [
+            (AppError::Forbidden, 403, "\"Forbidden\""),
+            (AppError::NotFound, 404, "\"NotFound\""),
+            (AppError::validation("title", "curto"), 422, "Validation"),
+            (AppError::RateLimited, 429, "RateLimited"),
+            (AppError::Internal, 500, "Internal"),
         ];
-        for (response, status, body) in cases {
-            let (got, text) = status_through_layer(response).await;
+        for (error, status, body) in cases {
+            let (got, text) = status_through_layer(Some(error)).await;
             assert_eq!(got.as_u16(), status, "{text}");
             assert!(text.contains(body), "{text}");
         }
         // Plain 500s without the server_fn marker are left alone.
-        let (got, _) = status_through_layer(|| {
-            (StatusCode::INTERNAL_SERVER_ERROR, "\"Forbidden\"").into_response()
-        })
-        .await;
+        let (got, _) = status_through_layer(None).await;
         assert_eq!(got, StatusCode::INTERNAL_SERVER_ERROR);
     }
 

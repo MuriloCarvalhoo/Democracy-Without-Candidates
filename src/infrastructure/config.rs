@@ -1,6 +1,10 @@
 //! Startup configuration. Required values fail explicitly; nothing is invented.
 
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Environment {
@@ -62,6 +66,9 @@ pub struct Config {
     /// Interval of the deadline/vote-closing and scheduled-notification tickers.
     /// Overridable (`DWC_TICKER_SECS`) only outside production (E2E/demos).
     pub ticker_secs: i64,
+    /// Reverse proxies whose `X-Forwarded-For` is trusted for the per-IP limit
+    /// (`DWC_TRUSTED_PROXY`, comma-separated; empty: socket peer only).
+    pub trusted_proxies: Vec<IpAddr>,
 }
 
 pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
@@ -172,6 +179,17 @@ impl Config {
             Some(url) => url.trim_end_matches('/').to_owned(),
         };
 
+        let trusted_proxies = get("DWC_TRUSTED_PROXY")
+            .unwrap_or_default()
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|v| !v.is_empty())
+            .map(|v| {
+                v.parse::<IpAddr>()
+                    .map(|ip| ip.to_canonical())
+                    .map_err(|_| ConfigError::Invalid("DWC_TRUSTED_PROXY", v.into()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         let parse_secs = |key: &'static str, default: i64| -> Result<i64, ConfigError> {
             match get(key) {
                 None => Ok(default),
@@ -201,6 +219,7 @@ impl Config {
             secure_cookies: production,
             brasilapi_url,
             ticker_secs: parse_secs("DWC_TICKER_SECS", 30)?,
+            trusted_proxies,
         })
     }
 
@@ -375,6 +394,26 @@ mod tests {
     #[test]
     fn synthetic_does_not_require_face_key() {
         assert!(cfg(DEV).unwrap().face_service_key_file.is_none());
+    }
+
+    #[test]
+    fn trusted_proxy_list_is_optional_and_validated() {
+        assert!(cfg(DEV).unwrap().trusted_proxies.is_empty());
+        let mut pairs = DEV.to_vec();
+        pairs.push(("DWC_TRUSTED_PROXY", "127.0.0.1, ::1"));
+        assert_eq!(
+            cfg(&pairs).unwrap().trusted_proxies,
+            vec![
+                "127.0.0.1".parse::<IpAddr>().unwrap(),
+                "::1".parse().unwrap()
+            ]
+        );
+        pairs.pop();
+        pairs.push(("DWC_TRUSTED_PROXY", "localhost"));
+        assert!(matches!(
+            cfg(&pairs),
+            Err(ConfigError::Invalid("DWC_TRUSTED_PROXY", _))
+        ));
     }
 
     #[test]

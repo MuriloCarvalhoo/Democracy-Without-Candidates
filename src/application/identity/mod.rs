@@ -214,15 +214,9 @@ async fn record_totp_step(conn: &Connection, user_id: &str, step: i64) -> Result
     }
 }
 
-/// Records a failed attempt (own transaction, committed even though the call fails).
-async fn record_failure(
-    deps: &Deps<'_>,
-    keys: &ClientKeys,
-    user_id: Option<&str>,
-    step: &str,
-) -> Result<(), AppError> {
+/// Audits a failed attempt (own transaction, committed even though the call fails).
+async fn audit_failure(deps: &Deps<'_>, user_id: Option<&str>, step: &str) -> Result<(), AppError> {
     let tx = deps.db.write().await?;
-    ratelimit::record_failure(&tx, deps.now, keys).await?;
     audit::append(
         &tx,
         deps.now,
@@ -239,46 +233,70 @@ async fn record_failure(
     Ok(())
 }
 
+/// A rejected factor: the audited step and the generic error returned.
+type Rejected = (&'static str, AppError);
+
+/// Runs one rate-limited verification. The attempt is counted before `verify`
+/// runs (atomic with the limit check), kept and audited when a factor is
+/// rejected, and released when verification succeeds or cannot run.
+async fn attempt<T>(
+    deps: &Deps<'_>,
+    keys: &ClientKeys,
+    user_id: Option<&str>,
+    verify: impl Future<Output = Result<Result<T, Rejected>, AppError>>,
+) -> Result<T, AppError> {
+    let reserved = ratelimit::reserve(deps.db, deps.now, keys).await?;
+    match verify.await {
+        Ok(Err((step, error))) => {
+            audit_failure(deps, user_id, step).await?;
+            Err(error)
+        }
+        outcome => {
+            let tx = deps.db.write().await?;
+            ratelimit::release(&tx, reserved).await?;
+            tx.commit().await?;
+            outcome?.map_err(|(_, e)| e)
+        }
+    }
+}
+
 /// Verifies password (optional), face and TOTP for a signed-in account. Failures are
-/// counted and rate limited. Returns the TOTP step to record in the effect transaction.
+/// counted per user (never per e-mail/IP, see `ratelimit`). Returns the TOTP step to
+/// record in the effect transaction.
 async fn verify_session_factors(
     deps: &Deps<'_>,
     user_id: &str,
-    keys: &ClientKeys,
     password: Option<&str>,
     proof: &FaceProof<'_>,
     totp_code: &str,
 ) -> Result<i64, AppError> {
     let conn = deps.db.read().await?;
-    ratelimit::check(&conn, deps.now, keys).await?;
     if credentials(&conn, user_id).await?.totp_reenroll_required {
         return Err(AppError::Conflict(t("auth.error.reenroll_totp").into()));
     }
-    if let Some(password) = password {
-        let stored: Option<String> = query_opt(
-            &conn,
-            "SELECT password_hash FROM users WHERE id = ?1",
-            [user_id],
-        )
-        .await?
-        .map(|r| r.get(0))
-        .transpose()?;
-        if !crate::infrastructure::password::verify(stored, password).await {
-            record_failure(deps, keys, Some(user_id), "password").await?;
-            return Err(invalid_credentials());
+    let keys = ClientKeys::session(user_id);
+    attempt(deps, &keys, Some(user_id), async {
+        if let Some(password) = password {
+            let stored: Option<String> = query_opt(
+                &conn,
+                "SELECT password_hash FROM users WHERE id = ?1",
+                [user_id],
+            )
+            .await?
+            .map(|r| r.get(0))
+            .transpose()?;
+            if !crate::infrastructure::password::verify(stored, password).await {
+                return Ok(Err(("password", invalid_credentials())));
+            }
         }
-    }
-    if !verify_face(deps, &user_subject(user_id), Some(user_id), proof).await? {
-        record_failure(deps, keys, Some(user_id), "face").await?;
-        return Err(face_not_confirmed());
-    }
-    match check_totp(deps, user_id, totp_code).await? {
-        Some(step) => Ok(step),
-        None => {
-            record_failure(deps, keys, Some(user_id), "totp").await?;
-            Err(invalid_totp())
+        if !verify_face(deps, &user_subject(user_id), Some(user_id), proof).await? {
+            return Ok(Err(("face", face_not_confirmed())));
         }
-    }
+        Ok(check_totp(deps, user_id, totp_code)
+            .await?
+            .ok_or_else(|| ("totp", invalid_totp())))
+    })
+    .await
 }
 
 async fn user_email(conn: &Connection, user_id: &str) -> Result<String, AppError> {

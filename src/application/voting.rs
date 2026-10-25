@@ -136,7 +136,7 @@ pub async fn cast(
         action: CAST_ACTION,
         request_hash: idempotency::request_hash(&[id, choice.as_db(), "public"]),
     });
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     if let Some(key) = &key
         && let Some(previous) = idempotency::lookup(&tx, key).await?
     {

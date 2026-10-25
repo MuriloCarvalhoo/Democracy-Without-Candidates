@@ -73,6 +73,7 @@ impl World {
             db: &self.t.db,
             flags: &self.flags,
             now,
+            clock: None,
             tz: Sao_Paulo,
         }
     }
@@ -503,6 +504,7 @@ async fn concurrent_publishes_do_not_exceed_quota() {
                     db: &db,
                     flags: &flags,
                     now,
+                    clock: None,
                     tz: Sao_Paulo,
                 };
                 proposals::publish(&ctx, &author, &id, None).await
@@ -699,6 +701,7 @@ async fn concurrent_signatures_at_threshold_transition_once() {
                     db: &db,
                     flags: &flags,
                     now,
+                    clock: None,
                     tz: Sao_Paulo,
                 };
                 signatures::sign(&ctx, &s, &id, None).await
@@ -1054,5 +1057,60 @@ async fn listing_filters_paginates_and_warns_duplicates() {
             .err(),
         Some(AppError::NotFound),
         "drafts are not exported"
+    );
+}
+
+#[tokio::test]
+async fn proposal_author_name_respects_profile_visibility() {
+    let w = world().await;
+    let now = at("2026-10-24T12:00:00Z");
+    w.adopt(now, &SUGGESTED).await;
+    let author = w.citizen(now, "4202404").await;
+    let other = w.citizen(now, "4202404").await;
+    let id = w
+        .publish(now, &author, ProposalKind::NormalLaw, "Praça pública")
+        .await;
+    let label = async |viewer: Option<&Actor>| {
+        let conn = w.t.db.read().await.unwrap();
+        proposals::detail(&conn, &w.flags, now, Sao_Paulo, viewer, &id)
+            .await
+            .unwrap()
+            .author
+    };
+    assert_eq!(label(None).await, "Cidadão(ã)", "private by default");
+    assert_eq!(label(Some(&other)).await, "Cidadão(ã)");
+    let tx = w.t.db.write().await.unwrap();
+    tx.execute(
+        "INSERT INTO user_preferences (user_id, profile_visibility, updated_at) VALUES (?1, 'public', 'now')",
+        [author.user_id.as_str()],
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(label(None).await, "Cidadã Sintética");
+}
+
+#[tokio::test]
+async fn signature_deadline_uses_time_read_after_acquiring_the_writer() {
+    use crate::infrastructure::clock::ManualClock;
+    let w = world().await;
+    let now = at("2026-10-24T12:00:00Z");
+    w.adopt(now, &SUGGESTED).await;
+    let author = w.citizen(now, "4202404").await;
+    let ana = w.citizen(now, "4202404").await;
+    let id = w
+        .publish(now, &author, ProposalKind::NormalLaw, "Biblioteca")
+        .await;
+    let end = at(&w.row(&id).await.collect_ends_at.unwrap());
+    w.grant(end, &ana, signatures::REAUTH_SIGN, &id).await;
+    let clock = ManualClock::new(end - Duration::milliseconds(1));
+    let ctx = Ctx {
+        clock: Some(&clock),
+        ..w.ctx(end - Duration::milliseconds(1))
+    };
+    clock.set(end + Duration::seconds(1));
+    assert_eq!(
+        signatures::sign(&ctx, &ana, &id, None).await.err(),
+        Some(AppError::PhaseClosed)
     );
 }

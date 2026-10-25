@@ -10,6 +10,7 @@ use super::{
     actor::Actor,
     audit::{self, Event, Visibility},
     idempotency::{self, Key},
+    identity::profile,
     notify::{Notice, notify},
     phases, reauth, setup,
 };
@@ -28,9 +29,9 @@ use crate::{
     error::AppError,
     i18n::t,
     infrastructure::{
-        clock::{parse_ts, ts},
+        clock::{Clock, parse_ts, ts},
         crypto::{new_id, sha256_hex},
-        db::{Db, query_all, query_opt},
+        db::{Db, WriteTx, query_all, query_opt},
         flags::{self, Flags},
     },
 };
@@ -39,12 +40,25 @@ pub const PAGE_SIZE: u32 = 20;
 pub use crate::domain::proposals::REAUTH_PUBLISH;
 
 /// Request context for proposal use cases.
+#[derive(Clone, Copy)]
 pub struct Ctx<'a> {
     pub db: &'a Db,
     pub flags: &'a Flags,
     pub now: DateTime<Utc>,
+    /// Live clock; when set, [`Ctx::write`] re-reads `now` after acquiring the writer.
+    pub clock: Option<&'a dyn Clock>,
     /// Instance timezone: civil year for quotas and displayed instants.
     pub tz: Tz,
+}
+
+impl<'a> Ctx<'a> {
+    /// Starts the write transaction; the returned context's `now` is read after
+    /// waiting for the single writer, so deadlines are not checked with a stale time.
+    pub async fn write(&self) -> Result<(WriteTx, Ctx<'a>), AppError> {
+        let tx = self.db.write().await?;
+        let now = self.clock.map_or(self.now, |c| c.now());
+        Ok((tx, Ctx { now, ..*self }))
+    }
 }
 
 /// Persisted proposal columns used by the use cases.
@@ -251,7 +265,7 @@ pub async fn save_draft(
     let normalized_title = normalize_text(&title);
     let body_hash = sha256_hex(normalize_text(&body));
 
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     if setup::effective_setup(&tx, &jurisdiction).await?.is_none() {
         return Err(AppError::Conflict(t("proposals.error.no_setup").into()));
     }
@@ -354,7 +368,7 @@ pub async fn publish(
         action: "proposal.publish",
         request_hash: idempotency::request_hash(&[id]),
     });
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     if let Some(key) = &key
         && let Some(previous) = idempotency::lookup(&tx, key).await?
     {
@@ -480,7 +494,7 @@ pub async fn withdraw(
     reason: &str,
 ) -> Result<(), AppError> {
     let reason = clean_reason(reason)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let p = load(&tx, id).await?.ok_or(AppError::NotFound)?;
     if p.author_id != actor.user_id {
         return Err(if p.status == ProposalStatus::Draft {
@@ -513,7 +527,7 @@ pub async fn withdraw(
 pub async fn archive(ctx: &Ctx<'_>, actor: &Actor, id: &str, reason: &str) -> Result<(), AppError> {
     actor.require(Permission::ProposalArchive)?;
     let reason = clean_reason(reason)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let p = load(&tx, id).await?.ok_or(AppError::NotFound)?;
     if !p.status.is_terminal() {
         return Err(AppError::PhaseClosed);
@@ -782,14 +796,7 @@ pub async fn detail(
         .await?
         .pop()
         .ok_or(AppError::NotFound)?;
-    let author: String = query_opt(
-        conn,
-        "SELECT name FROM users WHERE id = ?1",
-        [p.author_id.as_str()],
-    )
-    .await?
-    .ok_or(AppError::Internal)?
-    .get(0)?;
+    let author = profile::public_label(conn, &p.author_id).await?;
     let mut deadlines = Vec::new();
     for (phase, at) in [
         (ProposalStatus::CollectingSignatures, &p.collect_ends_at),

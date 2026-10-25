@@ -262,7 +262,7 @@ pub async fn post_comment(
     ctx.flags.require(flags::DEBATE)?;
     actor.require(Permission::CommentCreate)?;
     let body = clean("body", body, 1, COMMENT_MAX, true)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let p = published(&tx, proposal_id).await?;
     require_can_post(&tx, actor, &p, ctx.now, false).await?;
     let id = new_id();
@@ -321,7 +321,7 @@ pub async fn edit_comment(
     ctx.flags.require(flags::DEBATE)?;
     actor.require(Permission::CommentCreate)?;
     let body = clean("body", body, 1, COMMENT_MAX, true)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let c = load_comment(&tx, comment_id).await?;
     if c.author_id != actor.user_id {
         return Err(AppError::Forbidden);
@@ -403,7 +403,7 @@ pub async fn report_comment(
             t("debate.error.details_required"),
         ));
     }
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let c = load_comment(&tx, comment_id).await?;
     published(&tx, &c.proposal_id).await?;
     if c.author_id == actor.user_id {
@@ -494,7 +494,7 @@ pub async fn moderate_comment(
     ctx.flags.require(flags::DEBATE)?;
     actor.require(Permission::ModerationAct)?;
     let reason = clean_reason(reason)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let c = load_comment(&tx, comment_id).await?;
     let now = ts(ctx.now);
     let (public_kind, notice) = match decision {
@@ -593,7 +593,7 @@ pub async fn set_lock(
     ctx.flags.require(flags::DEBATE)?;
     actor.require(Permission::ModerationAct)?;
     let reason = clean_reason(reason)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let p = published(&tx, proposal_id).await?;
     let locked = query_opt(
         &tx,
@@ -649,10 +649,7 @@ async fn author_label(
     if let Some(label) = cache.get(user_id) {
         return Ok(label.clone());
     }
-    let label = match profile::public_view(conn, user_id).await? {
-        Some(p) => p.name,
-        None => t("debate.author.private").to_owned(),
-    };
+    let label = profile::public_label(conn, user_id).await?;
     cache.insert(user_id.to_owned(), label.clone());
     Ok(label)
 }
@@ -883,7 +880,7 @@ pub async fn propose_amendment(
     actor.require(Permission::CommentCreate)?;
     let title = clean("title", title, 5, AMENDMENT_TITLE_MAX, false)?;
     let body = clean("body", body, 20, AMENDMENT_BODY_MAX, true)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let p = published(&tx, proposal_id).await?;
     require_can_post(&tx, actor, &p, ctx.now, true).await?;
     let recent = count(
@@ -934,7 +931,7 @@ pub async fn change_amendment(
 ) -> Result<(), AppError> {
     ctx.flags.require(flags::DEBATE)?;
     actor.require(Permission::CommentCreate)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     let row = query_opt(
         &tx,
         "SELECT proposal_id, author_id, status, title FROM amendments WHERE id = ?1",

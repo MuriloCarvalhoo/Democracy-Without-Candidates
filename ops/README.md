@@ -6,7 +6,7 @@ Exemplos para uma VPS por país. Valores como `<subdominio>` são placeholders; 
 
 1. `just release` gera `target/release/dwc`, `target/release/hash.txt` e `target/site/`.
 2. Copie para `/opt/dwc/releases/<versão>/`: `dwc`, `hash.txt` (sempre ao lado do binário; sem ele os nomes com hash de `/pkg` não são encontrados), `site/`, `catalog/` e `ops/`. Aponte `/opt/dwc/current` para a release.
-3. Crie o usuário `dwc`, `/etc/dwc/dwc.env` a partir de [`dwc.env.example`](dwc.env.example) (modo 0600), a chave em `DWC_SECRET_KEY_FILE` e `/var/lib/dwc/snapshots` (dono `dwc`).
+3. Crie o usuário `dwc`, `/etc/dwc/dwc.env` a partir de [`dwc.env.example`](dwc.env.example) (modo 0600), a chave em `DWC_SECRET_KEY_FILE` (32 bytes ou 64 hex, modo 0600, dono `dwc`; em produção outra permissão impede a inicialização) e `/var/lib/dwc/snapshots` (dono `dwc`).
 4. Instale [`systemd/dwc.service`](systemd/dwc.service) e o proxy [`caddy/Caddyfile`](caddy/Caddyfile). A aplicação escuta só em loopback.
 
 ## Primeiro Admin País

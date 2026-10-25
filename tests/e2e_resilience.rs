@@ -234,6 +234,75 @@ async fn every_route_hydrates_and_keeps_working_for_each_role() {
     assert!(problems.is_empty(), "{} problems", problems.len());
 }
 
+async fn fill(browser: &Browser, css: &str, text: &str) {
+    let el = browser
+        .client
+        .wait()
+        .at_most(WAIT)
+        .for_element(Locator::Css(css))
+        .await
+        .expect(css);
+    el.clear().await.unwrap();
+    el.send_keys(text).await.unwrap();
+}
+
+async fn click(browser: &Browser, css: &str) {
+    browser
+        .client
+        .wait()
+        .at_most(WAIT)
+        .for_element(Locator::Css(css))
+        .await
+        .expect(css)
+        .click()
+        .await
+        .unwrap();
+}
+
+/// Regression: leaving the face step (face accepted, TOTP step shown)
+/// disposed the face widget while its button still read the derived
+/// `disabled` signal; the panic stopped the app mid sign-in, intermittently.
+#[tokio::test]
+#[ignore = "requires built app and chromedriver; run with `just e2e`"]
+async fn face_step_to_totp_step_never_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("e2e.db");
+    seed_dev(&db_path);
+    let app = App::start(&db_path, &[]);
+    let browser = Browser::start().await;
+    let mut problems = Vec::new();
+    for round in 0..10 {
+        let _ = browser.console().await;
+        browser.goto_hydrated(&app.url("/login")).await;
+        fill(&browser, "[data-testid=login-email]", "ana@dev.invalid").await;
+        fill(
+            &browser,
+            "[data-testid=login-password]",
+            "senha-sintetica-dev",
+        )
+        .await;
+        click(&browser, "[data-testid=login-submit]").await;
+        fill(&browser, "[data-testid=face-phrase]", "rosto-sintetico-dev").await;
+        click(&browser, "[data-testid=face-synthetic]").await;
+        browser
+            .client
+            .wait()
+            .at_most(WAIT)
+            .for_element(Locator::Css("[data-testid=login-code]"))
+            .await
+            .expect("TOTP step");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        for line in crashes(&browser).await {
+            problems.push(format!("round {round}: {line}"));
+        }
+    }
+    browser.close().await;
+    for p in &problems {
+        eprintln!("PROBLEM {p}");
+    }
+    assert!(problems.is_empty(), "{} problems", problems.len());
+}
+
 #[tokio::test]
 #[ignore = "requires built app and chromedriver; run with `just e2e`"]
 async fn browser_panic_is_visible_logged_on_server_and_navigation_recovers() {

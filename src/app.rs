@@ -8,11 +8,15 @@ use leptos_router::{
 use crate::{
     features::{
         account::{ChangePasswordPage, RecoveryCodesPage},
-        admin::{AdminPage, AuditorsPage},
+        admin::AdminPage,
         audit::{AuditAdvancedPage, AuditPublicPage},
         debate::{AmendmentsPage, DebatePage, ModerationPage},
         enroll::EnrollPage,
         home::HomePage,
+        iam::{
+            IamGroupPage, IamGroupsPage, IamPoliciesPage, IamPolicyPage, IamSimulatorPage,
+            IamUserPage, IamUsersPage,
+        },
         login::{LoginPage, ResetPasswordPage},
         metalaws::{MetaLawPage, MetaLawsPage, NewMetaLawPage},
         notifications::{NotificationPreferencesPage, NotificationsPage},
@@ -90,8 +94,15 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/dashboard") view=DashboardPage/>
                     <Route path=path!("/setup/historico") view=SetupHistoryPage/>
                     <Route path=path!("/admin") view=AdminPage/>
-                    <Route path=path!("/admin/auditores") view=AuditorsPage/>
                     <Route path=path!("/admin/moderacao") view=ModerationPage/>
+                    <Route path=path!("/admin/iam") view=IamPoliciesPage/>
+                    <Route path=path!("/admin/iam/politicas") view=IamPoliciesPage/>
+                    <Route path=path!("/admin/iam/politicas/:id") view=IamPolicyPage/>
+                    <Route path=path!("/admin/iam/grupos") view=IamGroupsPage/>
+                    <Route path=path!("/admin/iam/grupos/:id") view=IamGroupPage/>
+                    <Route path=path!("/admin/iam/usuarios") view=IamUsersPage/>
+                    <Route path=path!("/admin/iam/usuarios/:id") view=IamUserPage/>
+                    <Route path=path!("/admin/iam/simulador") view=IamSimulatorPage/>
                 </Routes>
             </Layout>
         </Router>

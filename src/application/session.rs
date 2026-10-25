@@ -141,18 +141,19 @@ pub mod testing {
         policy: SessionPolicy,
         municipality_code: &str,
     ) -> (String, String) {
-        account_with_session(db, now, policy, municipality_code, "active", &["CITIZEN"]).await
+        account_with_session(db, now, policy, municipality_code, "active", &["Cidadao"]).await
     }
 
     /// Like `citizen_with_session` with explicit status (`pending`/`active`/`blocked`)
-    /// and roles (`CITIZEN`, `AUDITOR`, `COUNTRY_ADMIN`). Test-only.
+    /// and attached policies by name (`Cidadao`, `Auditor`, `AdministratorAccess`...).
+    /// Test-only.
     pub async fn account_with_session(
         db: &Db,
         now: DateTime<Utc>,
         policy: SessionPolicy,
         municipality_code: &str,
         status: &str,
-        roles: &[&str],
+        policies: &[&str],
     ) -> (String, String) {
         let user_id = new_id();
         let tx = db.write().await.unwrap();
@@ -176,17 +177,25 @@ pub mod testing {
         )
         .await
         .unwrap();
-        for role in roles {
-            tx.execute(
-                "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, ?2, ?3)",
-                (user_id.as_str(), *role, ts(now)),
-            )
-            .await
-            .unwrap();
+        for name in policies {
+            attach_policy(&tx, &user_id, name).await;
         }
         let token = create(&tx, now, policy, &user_id).await.unwrap();
         tx.commit().await.unwrap();
         (user_id, token)
+    }
+
+    /// Attaches a policy (by name) to a user inside the caller's transaction. Test-only.
+    pub async fn attach_policy(conn: &turso::Connection, user_id: &str, policy_name: &str) {
+        let attached = conn
+            .execute(
+                "INSERT INTO iam_user_policies (user_id, policy_id, attached_at)
+                 SELECT ?1, id, 'test' FROM iam_policies WHERE name = ?2",
+                (user_id, policy_name),
+            )
+            .await
+            .unwrap();
+        assert_eq!(attached, 1, "policy {policy_name} exists");
     }
 }
 

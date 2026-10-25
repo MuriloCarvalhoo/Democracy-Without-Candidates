@@ -27,6 +27,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!("0300_debate"),
     migration!("0400_voting"),
     migration!("0450_audit_notifications"),
+    migration!("0500_iam"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -129,6 +130,69 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
         assert!(matches!(run(&t.db).await, Err(MigrationError::Modified(_))));
+    }
+
+    /// Existing roles become policy attachments and `user_roles` is dropped.
+    #[tokio::test]
+    async fn iam_migration_converts_roles_into_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("roles.db")).await.unwrap();
+        let tx = db.write().await.unwrap();
+        tx.execute(
+            "CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
+            (),
+        )
+        .await
+        .unwrap();
+        for m in MIGRATIONS.iter().take_while(|m| m.version != "0500_iam") {
+            tx.execute_batch(m.sql).await.unwrap();
+            tx.execute(
+                "INSERT INTO schema_migrations VALUES (?1, ?2, 'before')",
+                (m.version, sha256_hex(m.sql)),
+            )
+            .await
+            .unwrap();
+        }
+        tx.execute_batch(
+            "INSERT INTO jurisdictions (id, code, kind, name) VALUES ('br', 'BR', 'national', 'Brasil');
+             INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, created_at, updated_at) VALUES
+               ('u-cit', 'c@x.test', 'C', 'x', 'active', 'br', 'br', 'br', 't', 't'),
+               ('u-aud', 'a@x.test', 'A', 'x', 'active', 'br', 'br', 'br', 't', 't'),
+               ('u-adm', 'd@x.test', 'D', 'x', 'active', 'br', 'br', 'br', 't', 't');
+             INSERT INTO user_roles (user_id, role, granted_at, granted_by) VALUES
+               ('u-cit', 'CITIZEN', 't1', NULL), ('u-aud', 'CITIZEN', 't2', NULL),
+               ('u-aud', 'AUDITOR', 't3', 'admin-1'), ('u-adm', 'COUNTRY_ADMIN', 't4', 'operator:cli');",
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(run(&db).await.unwrap(), vec!["0500_iam"]);
+        let conn = db.read().await.unwrap();
+        let rows = super::super::db::query_all(
+            &conn,
+            "SELECT user_id, policy_id, attached_at, attached_by FROM iam_user_policies ORDER BY attached_at",
+            (),
+        )
+        .await
+        .unwrap();
+        let got: Vec<[String; 4]> = rows
+            .iter()
+            .map(|r| std::array::from_fn(|i| r.get::<String>(i).unwrap()))
+            .collect();
+        let expect = [
+            ["u-cit", "pol-cidadao", "t1", "migration:0500_iam"],
+            ["u-aud", "pol-cidadao", "t2", "migration:0500_iam"],
+            ["u-aud", "pol-auditor", "t3", "admin-1"],
+            ["u-adm", "pol-administrator-access", "t4", "operator:cli"],
+        ];
+        assert_eq!(got, expect.map(|r| r.map(String::from)));
+        assert!(
+            super::super::db::query_opt(&conn, "SELECT 1 FROM user_roles", ())
+                .await
+                .is_err(),
+            "roles table dropped"
+        );
     }
 
     #[tokio::test]

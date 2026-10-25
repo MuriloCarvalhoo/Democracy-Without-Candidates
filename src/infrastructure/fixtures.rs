@@ -12,13 +12,14 @@ use super::{
 };
 use crate::{
     application::{
-        actor, debate, phases,
+        actor, debate, iam, phases,
         proposals::{self, Ctx},
         reauth,
         session::{self, SessionPolicy},
         setup, signatures, voting,
     },
     domain::{
+        iam as policy,
         proposals::{Level, ProposalKind, REAUTH_PUBLISH, REAUTH_SIGN, view::DraftInput},
         setup::SUGGESTED,
         voting::{Choice, REAUTH_VOTE},
@@ -42,23 +43,51 @@ pub const DEV_FACE_PHRASE: &str = "rosto-sintetico-dev";
 /// Base32 TOTP secret (20 bytes) of every synthetic account.
 pub const DEV_TOTP_SECRET: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 
-/// (e-mail, name, municipality IBGE code, role).
-pub const DEV_ACCOUNTS: &[(&str, &str, &str, &str)] = &[
-    ("ana@dev.invalid", "Ana Sintética", "4202404", "CITIZEN"),
-    ("bruno@dev.invalid", "Bruno Sintético", "4202404", "CITIZEN"),
-    ("carla@dev.invalid", "Carla Sintética", "3550308", "CITIZEN"),
-    ("davi@dev.invalid", "Davi Sintético", "3304557", "CITIZEN"),
+/// (e-mail, name, municipality IBGE code, attached IAM policies).
+pub const DEV_ACCOUNTS: &[(&str, &str, &str, &[&str])] = &[
+    (
+        "ana@dev.invalid",
+        "Ana Sintética",
+        "4202404",
+        &[policy::CIDADAO],
+    ),
+    (
+        "bruno@dev.invalid",
+        "Bruno Sintético",
+        "4202404",
+        &[policy::CIDADAO],
+    ),
+    (
+        "carla@dev.invalid",
+        "Carla Sintética",
+        "3550308",
+        &[policy::CIDADAO],
+    ),
+    (
+        "davi@dev.invalid",
+        "Davi Sintético",
+        "3304557",
+        &[policy::CIDADAO],
+    ),
+    // Master admin: everything allowed (`*`) and also a participating citizen.
+    (
+        "master@dev.invalid",
+        "Admin Master Sintético",
+        "5300108",
+        &[policy::ADMINISTRATOR_ACCESS, policy::CIDADAO],
+    ),
+    // Former COUNTRY_ADMIN account: administrator, not part of the electorate.
     (
         "admin@dev.invalid",
         "Admin País Sintético",
         "5300108",
-        "COUNTRY_ADMIN",
+        &[policy::ADMINISTRATOR_ACCESS],
     ),
     (
         "auditor@dev.invalid",
         "Auditoria Sintética",
         "5300108",
-        "AUDITOR",
+        &[policy::AUDITOR],
     ),
 ];
 
@@ -97,7 +126,7 @@ pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, 
     let mut out = vec![format!(
         "synthetic accounts (development only): password={DEV_PASSWORD} face phrase={DEV_FACE_PHRASE} totp secret={DEV_TOTP_SECRET}"
     )];
-    for (email, name, municipality, role) in DEV_ACCOUNTS {
+    for (email, name, municipality, policies) in DEV_ACCOUNTS {
         let tx = db.write().await?;
         if query_opt(&tx, "SELECT 1 FROM users WHERE email = ?1", [*email])
             .await?
@@ -130,11 +159,13 @@ pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, 
             (id.as_str(), *email, *name, password_hash.as_str(), m, s, c, now.as_str()),
         )
         .await?;
-        tx.execute(
-            "INSERT INTO user_roles (user_id, role, granted_at, granted_by) VALUES (?1, ?2, ?3, 'seed-dev')",
-            (id.as_str(), *role, now.as_str()),
-        )
-        .await?;
+        for policy_id in *policies {
+            tx.execute(
+                "INSERT INTO iam_user_policies (user_id, policy_id, attached_at, attached_by) VALUES (?1, ?2, ?3, 'seed-dev')",
+                (id.as_str(), *policy_id, now.as_str()),
+            )
+            .await?;
+        }
         tx.execute(
             "INSERT INTO addresses (user_id, cep, state, city, neighborhood, street, service, ibge, created_at)
              VALUES (?1, '00000000', ?2, ?3, '', '', 'seed-dev', ?4, ?5)",
@@ -164,7 +195,7 @@ pub async fn seed_accounts(db: &Db, secrets: &SecretBox) -> Result<Vec<String>, 
         )
         .await?;
         tx.commit().await?;
-        out.push(format!("account {email} ({role}, {city})"));
+        out.push(format!("account {email} ({}, {city})", policies.join("+")));
     }
     Ok(out)
 }
@@ -220,11 +251,7 @@ async fn seed_legislative(
             (id.as_str(), format!("sintetico-{n:02}@dev.invalid"), format!("Pessoa Sintética {n:02}"), m.as_str(), s.as_str(), c.as_str(), ts(now)),
         )
         .await?;
-        tx.execute(
-            "INSERT INTO user_roles (user_id, role, granted_at, granted_by) VALUES (?1, 'CITIZEN', ?2, 'seed-dev')",
-            (id.as_str(), ts(now)),
-        )
-        .await?;
+        iam::attach_cidadao(&tx, now, &id, "seed-dev").await?;
         let token = session::create(&tx, now, policy, &id).await?;
         citizens.push((id, session::token_hash(&token)));
     }
@@ -542,11 +569,7 @@ pub async fn seed_load(db: &Db, config: &Config, n: usize) -> Result<serde_json:
             (id.as_str(), format!("carga-{i:06}@load.invalid"), format!("Eleitor Sintético {i:06}"), m.as_str(), s.as_str(), c.as_str(), ts(now)),
         )
         .await?;
-        tx.execute(
-            "INSERT INTO user_roles (user_id, role, granted_at, granted_by) VALUES (?1, 'CITIZEN', ?2, 'seed-load')",
-            (id.as_str(), ts(now)),
-        )
-        .await?;
+        iam::attach_cidadao(&tx, now, &id, "seed-load").await?;
         let token = session::create(&tx, now, policy, &id).await?;
         accounts.push((id, token));
     }

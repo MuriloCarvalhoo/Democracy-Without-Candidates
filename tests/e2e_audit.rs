@@ -104,9 +104,9 @@ async fn visitor_sees_public_log_and_is_denied_restricted_view() {
     browser.close().await;
 }
 
-/// Synthetic active account with the given role and a live session (no login UI
-/// yet: the session row is created directly). Returns the cookie token.
-async fn account_with_session(db: &Db, email: &str, role: &str) -> (String, String) {
+/// Synthetic active account with the given IAM policy (id) and a live session (no
+/// login UI: the session row is created directly). Returns the cookie token.
+async fn account_with_session(db: &Db, email: &str, policy: &str) -> (String, String) {
     use dwc::{
         application::session::{self, SessionPolicy},
         infrastructure::db::query_opt,
@@ -126,7 +126,7 @@ async fn account_with_session(db: &Db, email: &str, role: &str) -> (String, Stri
         row.get(1).unwrap(),
         row.get(2).unwrap(),
     );
-    let id = format!("user-{role}");
+    let id = format!("user-{policy}");
     tx.execute(
         "INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, synthetic, created_at, updated_at)
          VALUES (?1, ?2, 'Pessoa Sintética', 'x', 'active', ?3, ?4, ?5, 1, 'now', 'now')",
@@ -135,8 +135,8 @@ async fn account_with_session(db: &Db, email: &str, role: &str) -> (String, Stri
     .await
     .unwrap();
     tx.execute(
-        "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, ?2, 'now')",
-        (id.as_str(), role),
+        "INSERT INTO iam_user_policies (user_id, policy_id, attached_at) VALUES (?1, ?2, 'now')",
+        (id.as_str(), policy),
     )
     .await
     .unwrap();
@@ -190,9 +190,9 @@ async fn citizen_notifications_and_auditor_restricted_access() {
             .await
             .unwrap();
         let (citizen, citizen_token) =
-            account_with_session(&db, "cidada@example.test", "CITIZEN").await;
+            account_with_session(&db, "cidada@example.test", "pol-cidadao").await;
         let (auditor, auditor_token) =
-            account_with_session(&db, "auditor@example.test", "AUDITOR").await;
+            account_with_session(&db, "auditor@example.test", "pol-auditor").await;
         let tx = db.write().await.unwrap();
         for (event, title) in [
             ("proposal_created", "Nova proposta"),

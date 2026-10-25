@@ -129,8 +129,8 @@ async fn proposal(w: &World, author: &str, status: &str) -> String {
 async fn posting_requires_session_same_origin_and_territory() {
     let w = World::new().await;
     let app = app(&w);
-    let (author, author_cookie) = session(&w, "4202404", &["CITIZEN"]).await;
-    let (_, outsider) = session(&w, "4106902", &["CITIZEN"]).await;
+    let (author, author_cookie) = session(&w, "4202404", &["Cidadao"]).await;
+    let (_, outsider) = session(&w, "4106902", &["Cidadao"]).await;
     let id = proposal(&w, &author, "in_debate").await;
     let form = format!("id={id}&body=Coment%C3%A1rio+de+rede");
 

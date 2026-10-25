@@ -12,6 +12,7 @@ use turso::{Connection, Value};
 use super::{
     actor::Actor,
     audit::{self, Event, Visibility},
+    iam,
     identity::profile,
     notify::{Notice, notify},
     proposals::{self, Ctx, ProposalRow, local},
@@ -492,10 +493,12 @@ pub async fn moderate_comment(
     reason: &str,
 ) -> Result<(), AppError> {
     ctx.flags.require(flags::DEBATE)?;
-    actor.require(Permission::ModerationAct)?;
+    iam::may_act(actor, Permission::ModerationAct)?;
     let reason = clean_reason(reason)?;
     let (tx, ctx) = ctx.write().await?;
     let c = load_comment(&tx, comment_id).await?;
+    let jurisdiction = published(&tx, &c.proposal_id).await?.jurisdiction_id;
+    iam::require_in_jurisdiction(&tx, actor, Permission::ModerationAct, &jurisdiction).await?;
     let now = ts(ctx.now);
     let (public_kind, notice) = match decision {
         ModerationDecision::Remove => {
@@ -591,10 +594,11 @@ pub async fn set_lock(
     reason: &str,
 ) -> Result<(), AppError> {
     ctx.flags.require(flags::DEBATE)?;
-    actor.require(Permission::ModerationAct)?;
+    iam::may_act(actor, Permission::ModerationAct)?;
     let reason = clean_reason(reason)?;
     let (tx, ctx) = ctx.write().await?;
     let p = published(&tx, proposal_id).await?;
+    iam::require_in_jurisdiction(&tx, actor, Permission::ModerationAct, &p.jurisdiction_id).await?;
     let locked = query_opt(
         &tx,
         "SELECT 1 FROM debate_locks WHERE proposal_id = ?1 AND locked = 1",
@@ -675,7 +679,12 @@ pub async fn thread(
     flags.require(flags::DEBATE)?;
     let p = published(conn, proposal_id).await?;
     let lock = lock_info(conn, &p.id, tz).await?;
-    let moderator = viewer.is_some_and(|a| a.can(Permission::ModerationAct));
+    let moderator = match viewer {
+        Some(a) => {
+            iam::can_in_jurisdiction(conn, a, Permission::ModerationAct, &p.jurisdiction_id).await?
+        }
+        None => false,
+    };
     let block = viewer.map(|a| block_for(a, &p, now, lock.is_some(), false));
     let threads = count(
         conn,

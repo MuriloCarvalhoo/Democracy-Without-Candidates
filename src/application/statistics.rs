@@ -61,7 +61,9 @@ pub async fn statistics(conn: &Connection) -> Result<Statistics, AppError> {
     let rows = query_all(
         conn,
         "SELECT j.name, COUNT(*) FROM users u JOIN jurisdictions j ON j.id = u.state_id
-         WHERE u.status = 'active' AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'CITIZEN')
+         WHERE u.status = 'active' AND (EXISTS (SELECT 1 FROM iam_user_policies up WHERE up.user_id = u.id AND up.policy_id = 'pol-cidadao')
+           OR EXISTS (SELECT 1 FROM iam_user_groups ug JOIN iam_group_policies gp ON gp.group_id = ug.group_id
+                      WHERE ug.user_id = u.id AND gp.policy_id = 'pol-cidadao'))
          GROUP BY j.id, j.name ORDER BY j.name",
         (),
     )

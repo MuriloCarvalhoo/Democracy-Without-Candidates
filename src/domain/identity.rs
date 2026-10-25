@@ -1,30 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Role {
-    Citizen,
-    Auditor,
-    CountryAdmin,
-}
-
-impl Role {
-    pub fn as_db(self) -> &'static str {
-        match self {
-            Self::Citizen => "CITIZEN",
-            Self::Auditor => "AUDITOR",
-            Self::CountryAdmin => "COUNTRY_ADMIN",
-        }
-    }
-
-    pub fn from_db(value: &str) -> Option<Self> {
-        match value {
-            "CITIZEN" => Some(Self::Citizen),
-            "AUDITOR" => Some(Self::Auditor),
-            "COUNTRY_ADMIN" => Some(Self::CountryAdmin),
-            _ => None,
-        }
-    }
-}
+/// Authorization moved to IAM policies (`domain::iam`); re-exported for use cases.
+pub use super::iam::Permission;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountStatus {
@@ -51,62 +28,6 @@ impl AccountStatus {
             _ => None,
         }
     }
-}
-
-/// `resource:action` permissions. Territory, authorship and phase are checked
-/// separately by the use case; a permission alone never authorizes an action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Permission {
-    ProfileRead,
-    ProfileUpdate,
-    ProposalCreate,
-    ProposalSign,
-    ProposalVote,
-    CommentCreate,
-    SetupVote,
-    SetupStart,
-    ModerationAct,
-    ProposalArchive,
-    FlagsManage,
-    AuditorsManage,
-    AuditReadRestricted,
-}
-
-pub fn permissions(status: AccountStatus, roles: &[Role]) -> Vec<Permission> {
-    use Permission::*;
-    match status {
-        AccountStatus::Blocked => return Vec::new(),
-        AccountStatus::Pending => return vec![ProfileRead],
-        AccountStatus::Active => {}
-    }
-    let mut out = vec![ProfileRead];
-    for role in roles {
-        let granted: &[Permission] = match role {
-            Role::Citizen => &[
-                ProfileUpdate,
-                ProposalCreate,
-                ProposalSign,
-                ProposalVote,
-                CommentCreate,
-                SetupVote,
-            ],
-            Role::Auditor => &[AuditReadRestricted],
-            Role::CountryAdmin => &[
-                SetupStart,
-                ModerationAct,
-                ProposalArchive,
-                FlagsManage,
-                AuditorsManage,
-                AuditReadRestricted,
-            ],
-        };
-        for p in granted {
-            if !out.contains(p) {
-                out.push(*p);
-            }
-        }
-    }
-    out
 }
 
 /// Email used for per-instance uniqueness: trimmed and lowercased, no provider aliases.
@@ -210,24 +131,5 @@ mod tests {
         assert!(password_acceptable("correct horse"));
         assert!(password_acceptable(&"é".repeat(12)));
         assert!(!password_acceptable(&"a".repeat(129)));
-    }
-
-    #[test]
-    fn pending_and_blocked_cannot_participate() {
-        assert_eq!(
-            permissions(AccountStatus::Pending, &[Role::Citizen]),
-            vec![Permission::ProfileRead]
-        );
-        assert!(
-            permissions(AccountStatus::Blocked, &[Role::Citizen, Role::CountryAdmin]).is_empty()
-        );
-        let citizen = permissions(AccountStatus::Active, &[Role::Citizen]);
-        assert!(citizen.contains(&Permission::ProposalVote));
-        assert!(!citizen.contains(&Permission::FlagsManage));
-        let admin = permissions(AccountStatus::Active, &[Role::CountryAdmin]);
-        assert!(
-            !admin.contains(&Permission::ProposalVote),
-            "admin role alone does not vote"
-        );
     }
 }

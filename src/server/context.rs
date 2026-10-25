@@ -56,6 +56,21 @@ pub async fn current_actor(touch: bool) -> Result<Option<Actor>, AppError> {
     }
 }
 
+/// Public reads gated by IAM (`Publico` for visitors, the account's policies
+/// otherwise); an expired session reads as a visitor.
+pub async fn require_public_read(
+    touch: bool,
+    permission: crate::domain::iam::Permission,
+) -> Result<(), AppError> {
+    let viewer = match current_actor(touch).await {
+        Err(AppError::SessionExpired) => None,
+        other => other?,
+    };
+    let state = state()?;
+    crate::application::iam::require_viewer(&state.db.read().await?, viewer.as_ref(), permission)
+        .await
+}
+
 /// Actor required for protected operations; renews activity.
 pub async fn require_actor() -> Result<Actor, AppError> {
     current_actor(true).await?.ok_or(AppError::Unauthenticated)

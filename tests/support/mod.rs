@@ -174,6 +174,43 @@ pub fn http_post(port: u16, path: &str, headers: &[(&str, &str)], body: &str) ->
     (status, body)
 }
 
+/// POST to chromedriver reading exactly `Content-Length` bytes (it may keep the
+/// connection open). Returns the body of a 200 response.
+fn driver_post_json(port: u16, path: &str, body: &str) -> String {
+    use std::io::{BufRead, BufReader};
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect chromedriver");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    write!(
+        stream,
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    let mut reader = BufReader::new(stream);
+    let mut status_line = String::new();
+    reader.read_line(&mut status_line).unwrap();
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        if line == "\r\n" || line.is_empty() {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':')
+            && k.eq_ignore_ascii_case("content-length")
+        {
+            length = v.trim().parse().unwrap_or(0);
+        }
+    }
+    let mut buf = vec![0; length];
+    reader.read_exact(&mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert!(status_line.contains(" 200 "), "{status_line}: {text}");
+    text
+}
+
 fn spawn_app(db_path: &Path, port: u16, env: &[(String, String)]) -> Child {
     let mut child = app_command(db_path, port, env).spawn().expect("spawn app");
     // Fail fast if the process exits during startup (bad config, port in use).
@@ -218,6 +255,7 @@ impl Drop for App {
 
 pub struct Browser {
     driver: Child,
+    driver_port: u16,
     pub client: Client,
 }
 
@@ -243,13 +281,45 @@ impl Browser {
         }
         let mut caps = serde_json::Map::new();
         caps.insert("goog:chromeOptions".into(), chrome);
+        // Keeps browser console messages readable through `console_errors`.
+        caps.insert(
+            "goog:loggingPrefs".into(),
+            serde_json::json!({ "browser": "ALL" }),
+        );
         let client = ClientBuilder::rustls()
             .expect("tls")
             .capabilities(caps)
             .connect(&format!("http://127.0.0.1:{port}"))
             .await
             .expect("webdriver session");
-        Self { driver, client }
+        Self {
+            driver,
+            driver_port: port,
+            client,
+        }
+    }
+
+    /// SEVERE browser console entries since the last call (chromedriver log API).
+    pub async fn console_errors(&self) -> Vec<String> {
+        let sid = self
+            .client
+            .session_id()
+            .await
+            .unwrap()
+            .expect("webdriver session");
+        let body = driver_post_json(
+            self.driver_port,
+            &format!("/session/{sid}/se/log"),
+            r#"{"type":"browser"}"#,
+        );
+        let json: serde_json::Value = serde_json::from_str(&body).expect("log json");
+        json["value"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|e| e["level"] == "SEVERE")
+            .filter_map(|e| e["message"].as_str().map(str::to_owned))
+            .collect()
     }
 
     pub async fn goto_hydrated(&self, url: &str) {

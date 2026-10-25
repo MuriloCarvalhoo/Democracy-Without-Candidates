@@ -15,7 +15,6 @@ use super::{
 };
 use crate::{
     domain::{
-        identity::Role,
         proposals::{
             Level, Outcome, ProposalKind, ProposalStatus, RejectReason, Tally, compute_result,
             view::DraftInput,
@@ -626,17 +625,21 @@ async fn initial_plebiscite_is_started_by_admin_and_voted_with_setup_reauth() {
     let admin = {
         let a = w.citizen(BNU).await;
         let tx = w.t.db.write().await.unwrap();
+        // Administrator only: not part of the electorate (no Cidadao).
         tx.execute(
-            "UPDATE user_roles SET role = 'COUNTRY_ADMIN' WHERE user_id = ?1",
+            "DELETE FROM iam_user_policies WHERE user_id = ?1",
             [a.user_id.as_str()],
         )
         .await
         .unwrap();
+        crate::application::session::testing::attach_policy(&tx, &a.user_id, "AdministratorAccess")
+            .await;
         tx.commit().await.unwrap();
-        Actor {
-            roles: vec![Role::CountryAdmin],
-            ..a
-        }
+        let conn = w.t.db.read().await.unwrap();
+        crate::application::actor::load(&conn, &a.user_id, &a.session_hash)
+            .await
+            .unwrap()
+            .unwrap()
     };
     let ana = w.citizen(BNU).await;
     let bia = w.citizen("3550308").await;

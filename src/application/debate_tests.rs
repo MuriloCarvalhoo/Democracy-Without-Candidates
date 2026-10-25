@@ -88,11 +88,12 @@ impl World {
     }
 
     async fn citizen(&self, code: &str) -> Actor {
-        self.account(code, "active", &["CITIZEN"]).await
+        self.account(code, "active", &["Cidadao"]).await
     }
 
+    /// Moderator through the managed `Moderador` policy only (no `Cidadao`).
     async fn admin(&self) -> Actor {
-        self.account("4202404", "active", &["COUNTRY_ADMIN"]).await
+        self.account("4202404", "active", &["Moderador"]).await
     }
 
     /// Proposal row inserted directly in `status` (published unless draft).
@@ -162,7 +163,7 @@ async fn territory_and_account_status_gate_posting() {
     let neighbor = w.citizen("4202404").await;
     let other_city = w.citizen("4205407").await;
     let other_state = w.citizen("3550308").await;
-    let pending = w.account("4202404", "pending", &["CITIZEN"]).await;
+    let pending = w.account("4202404", "pending", &["Cidadao"]).await;
     let admin = w.admin().await;
 
     w.post(&neighbor, &municipal, None, "Concordo com a proposta.")
@@ -181,10 +182,15 @@ async fn territory_and_account_status_gate_posting() {
         Err(AppError::Forbidden)
     );
     assert_eq!(
-        w.post(&admin, &municipal, None, "Admin sem papel de cidadão")
-            .await,
+        w.post(
+            &admin,
+            &municipal,
+            None,
+            "Moderador sem política de cidadão"
+        )
+        .await,
         Err(AppError::Forbidden),
-        "moderation role alone does not post"
+        "moderation policy alone does not post"
     );
 
     let v = w.view(Some(&other_city), &municipal).await;

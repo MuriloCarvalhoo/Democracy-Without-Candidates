@@ -32,8 +32,8 @@ const USAGE: &str = "usage: dwc [serve | seed-dev | grant-admin <email> | backup
 
 /// `dwc` serves. Operator commands run against a stopped instance because the
 /// engine locks the database for the owning process:
-/// `seed-dev` (synthetic fixtures, non-production), `grant-admin <email>` (bootstrap
-/// COUNTRY_ADMIN for an existing active account), `backup <dest>` (consistent
+/// `seed-dev` (synthetic fixtures, non-production), `grant-admin <email>` (attaches
+/// the AdministratorAccess IAM policy to an existing active account), `backup <dest>` (consistent
 /// snapshot), `check-db` (read-only verification, prints JSON), `audit-checkpoint
 /// <out.json>` (signs the audit head for export outside the VPS) and
 /// `audit-verify <checkpoint.json>` (checks one against the local chain).
@@ -73,10 +73,12 @@ pub async fn run() -> Result<(), String> {
         }
         ["grant-admin", email] => {
             let db = prepare(&config).await?;
-            crate::application::admin::grant_country_admin(&db, chrono::Utc::now(), email)
+            crate::application::iam::grant_administrator(&db, chrono::Utc::now(), email)
                 .await
                 .map_err(|e| format!("grant-admin: {}", e.user_message()))?;
-            println!("COUNTRY_ADMIN granted (audited); effective on the account's next request");
+            println!(
+                "AdministratorAccess attached (audited); effective on the account's next request"
+            );
             Ok(())
         }
         ["backup", dest] => {

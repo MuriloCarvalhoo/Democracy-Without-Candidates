@@ -5,6 +5,7 @@ use leptos_router::components::A;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    domain::iam::Permission,
     error::AppError,
     features::notifications::{NotificationsBadge, provide_notifications_refresh},
     i18n::t,
@@ -14,8 +15,26 @@ use crate::{
 pub struct Viewer {
     pub name: String,
     pub pending: bool,
-    pub is_admin: bool,
-    pub is_auditor: bool,
+    /// Actions the viewer's IAM policies allow on every resource. Menus only:
+    /// the server checks every request again.
+    pub allowed: Vec<Permission>,
+}
+
+impl Viewer {
+    pub fn can(&self, permission: Permission) -> bool {
+        self.allowed.contains(&permission)
+    }
+
+    /// First administration page this viewer may open, if any.
+    pub fn admin_home(&self) -> Option<&'static str> {
+        [
+            (Permission::AdminRead, "/admin"),
+            (Permission::IamRead, "/admin/iam"),
+            (Permission::ModerationAct, "/admin/moderacao"),
+        ]
+        .into_iter()
+        .find_map(|(p, href)| self.can(p).then_some(href))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,10 +56,7 @@ impl Instance {
 /// Public instance state. Does not renew session activity.
 #[server]
 pub async fn instance_info() -> Result<Instance, AppError> {
-    use crate::{
-        domain::identity::{AccountStatus, Role},
-        server::context,
-    };
+    use crate::{domain::identity::AccountStatus, server::context};
     let state = context::state()?;
     let viewer = match context::current_actor(false).await {
         Ok(actor) => actor,
@@ -50,8 +66,7 @@ pub async fn instance_info() -> Result<Instance, AppError> {
     .map(|a| Viewer {
         name: a.name.clone(),
         pending: a.status == AccountStatus::Pending,
-        is_admin: a.has_role(Role::CountryAdmin),
-        is_auditor: a.has_role(Role::Auditor),
+        allowed: a.access.allowed_actions(),
     });
     Ok(Instance {
         country: state.config.country.name.to_owned(),
@@ -108,8 +123,8 @@ pub fn Layout(children: Children) -> impl IntoView {
                 <A href="/estatisticas">{t("nav.statistics")}</A>
                 <A href="/auditoria">{t("nav.audit")}</A>
                 <Transition fallback=|| ()>
-                    {move || info.get().and_then(|r| r.ok()).and_then(|i| i.viewer).filter(|v| v.is_admin).map(|_| view! {
-                        <A href="/admin">{t("nav.admin")}</A>
+                    {move || info.get().and_then(|r| r.ok()).and_then(|i| i.viewer).and_then(|v| v.admin_home()).map(|href| view! {
+                        <A href=href attr:data-testid="nav-admin">{t("nav.admin")}</A>
                     })}
                 </Transition>
             </nav>

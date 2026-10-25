@@ -58,6 +58,7 @@ pub async fn list_proposals(
     page: Option<u32>,
 ) -> Result<ProposalPage, AppError> {
     use crate::{application::proposals, server::context};
+    context::require_public_read(true, crate::domain::iam::Permission::ProposalRead).await?;
     let state = context::state()?;
     let filter =
         proposals::ListFilter::parse(kind.as_deref(), status.as_deref(), level.as_deref(), page)?;
@@ -73,6 +74,12 @@ pub async fn get_proposal(id: String) -> Result<ProposalDetail, AppError> {
     let viewer = srv::viewer().await?;
     srv::advance(&state).await?;
     let conn = state.db.read().await?;
+    crate::application::iam::require_viewer(
+        &conn,
+        viewer.as_ref(),
+        crate::domain::iam::Permission::ProposalRead,
+    )
+    .await?;
     proposals::detail(
         &conn,
         &state.flags,

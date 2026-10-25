@@ -11,6 +11,7 @@ Atualizado em 2026-10-25. Banco aprovado: TursoDB local pela crate Rust `turso` 
 | `0300_debate` | Comentários, revisões, denúncias, moderação, bloqueios, emendas |
 | `0400_voting` | Cédulas públicas demonstrativas e resultados imutáveis |
 | `0450_audit_notifications` | Checkpoints, preferências e agendamento de notificações |
+| `0500_iam` | Políticas IAM (`iam_policies`, gerenciadas por trigger), grupos e anexos usuário/grupo; converte `user_roles` (CITIZEN→`Cidadao`, AUDITOR→`Auditor`, COUNTRY_ADMIN→`AdministratorAccess`) e remove a tabela |
 
 Verificado no motor real: CHECK, UNIQUE, FK, triggers, RETURNING, ON CONFLICT, `VACUUM INTO` e `PRAGMA integrity_check`. Dois escritores simultâneos retornam Busy; triggers com cadeias longas de `OR` estouram a pilha em debug.
 
@@ -46,7 +47,7 @@ Os campos abaixo descrevem necessidades, não um schema final nem dados que deva
 | Sessão/credenciais | Hash de senha com salt, sem senha em texto puro; estado de sessão persistido no TursoDB da instância, associado ao identificador opaco do cookie, com última atividade, expiração e revogação preservadas após reinício; schema/migrations ainda a detalhar, sem manter conectado entre usos |
 | Segundo fator | Estado de configuração e segredo/referência protegidos; hashes de códigos de recuperação TOTP e estado de consumo de uso único, com atualização atômica |
 | Jurisdição | ID, nome, tipo nacional/estadual/municipal, parent_id e status |
-| Roles/permissões | Papéis e permissões, vínculos de usuário/role e role/permissão conforme políticas |
+| Políticas IAM | Documentos JSON validados no servidor, grupos e anexos usuário/grupo↔política; avaliação em [autorização](auth-rbac-flow.md#autorização-no-modelo-iam) |
 | Reautenticação | Ação/recurso autorizado, provider, resultado, validade e consumo; associação com cédula privada depende do protocolo |
 
 Separar dados pessoais de projeções públicas. Não armazenar imagem biométrica bruta. A proposta de `biometric_hash UNIQUE` não é uma solução especificada para matching ou unicidade de pessoas. E-mail identifica a conta na instância, sem documento nacional. O endereço inicial e seu vínculo territorial não podem ser alterados nesta versão. Persistência e casos de uso devem preservar esse bloqueio; normalização/formato de e-mail e validação do endereço precisam de critérios definidos; e-mail informado não é verificado e sua confirmação não bloqueia ativação nesta versão; unicidade de e-mail não garante unicidade de pessoas.

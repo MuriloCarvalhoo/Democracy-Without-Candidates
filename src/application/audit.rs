@@ -454,16 +454,14 @@ mod tests {
         let policy = SessionPolicy::from_secs(900, 28800);
         let (user, token) = citizen_with_session(db, now, policy, "4202404").await;
         let tx = db.write().await.unwrap();
-        tx.execute("DELETE FROM user_roles WHERE user_id = ?1", [user.as_str()])
-            .await
-            .unwrap();
-        for role in roles {
-            tx.execute(
-                "INSERT INTO user_roles (user_id, role, granted_at) VALUES (?1, ?2, 'now')",
-                (user.as_str(), *role),
-            )
-            .await
-            .unwrap();
+        tx.execute(
+            "DELETE FROM iam_user_policies WHERE user_id = ?1",
+            [user.as_str()],
+        )
+        .await
+        .unwrap();
+        for name in roles {
+            session::testing::attach_policy(&tx, &user, name).await;
         }
         tx.commit().await.unwrap();
         session::resolve(db, now, policy, &token, false)
@@ -532,7 +530,7 @@ mod tests {
             .unwrap();
         tx.commit().await.unwrap();
 
-        let citizen = actor_with_roles(&t.db, &["CITIZEN"]).await;
+        let citizen = actor_with_roles(&t.db, &["Cidadao"]).await;
         assert_eq!(
             read_restricted(&t.db, now, &citizen, None, None).await,
             Err(AppError::Forbidden)
@@ -549,7 +547,7 @@ mod tests {
             "denied read is not logged as access"
         );
 
-        for roles in [&["AUDITOR"][..], &["COUNTRY_ADMIN"][..]] {
+        for roles in [&["Auditor"][..], &["AdministratorAccess"][..]] {
             let reader = actor_with_roles(&t.db, roles).await;
             let (events, _) = read_restricted(&t.db, now, &reader, None, None)
                 .await
@@ -565,8 +563,24 @@ mod tests {
         }
         assert_eq!(count(t.db.clone()).await, 3);
 
-        let mut pending_auditor = actor_with_roles(&t.db, &["AUDITOR"]).await;
-        pending_auditor.status = crate::domain::identity::AccountStatus::Pending;
+        // Account status dominates attached policies (applied when the actor loads).
+        let auditor = actor_with_roles(&t.db, &["Auditor"]).await;
+        let tx = t.db.write().await.unwrap();
+        tx.execute(
+            "UPDATE users SET status = 'pending' WHERE id = ?1",
+            [auditor.user_id.as_str()],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let pending_auditor = crate::application::actor::load(
+            &t.db.read().await.unwrap(),
+            &auditor.user_id,
+            &auditor.session_hash,
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(
             read_restricted(&t.db, now, &pending_auditor, None, None).await,
             Err(AppError::Forbidden)

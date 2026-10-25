@@ -93,8 +93,17 @@ impl App {
 
     /// Stops the process (SIGKILL) and starts it again on the same database and port.
     pub fn restart(&mut self) {
+        self.stop();
+        self.resume();
+    }
+
+    /// Stops the process (SIGKILL) so the test may edit the database; then `resume`.
+    pub fn stop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+
+    pub fn resume(&mut self) {
         self.child = spawn_app(&self.db_path, self.port, &self.env);
         self.wait_ready();
     }

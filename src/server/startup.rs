@@ -28,7 +28,7 @@ use crate::{
     },
 };
 
-const USAGE: &str = "usage: dwc [serve | seed-dev | grant-admin <email> | backup <dest.db> | check-db | audit-checkpoint <out.json> | audit-verify <checkpoint.json>]";
+const USAGE: &str = "usage: dwc [serve | seed-dev | grant-admin <email> | backup <dest.db> | check-db | audit-checkpoint <out.json> | audit-verify <checkpoint.json> | seed-load <n> <out.json> | close-votes-at <rfc3339>]";
 
 /// `dwc` serves. Operator commands run against a stopped instance because the
 /// engine locks the database for the owning process:
@@ -37,6 +37,9 @@ const USAGE: &str = "usage: dwc [serve | seed-dev | grant-admin <email> | backup
 /// snapshot), `check-db` (read-only verification, prints JSON), `audit-checkpoint
 /// <out.json>` (signs the audit head for export outside the VPS) and
 /// `audit-verify <checkpoint.json>` (checks one against the local chain).
+/// Test-only (`DWC_ENV=test`): `seed-load <n> <out.json>` (synthetic voters with
+/// sessions and reauth grants for load runs) and `close-votes-at <rfc3339>`
+/// (closes votes due at that instant, to verify tallies after a load run).
 pub async fn run() -> Result<(), String> {
     let conf = get_configuration(None).map_err(|e| format!("leptos configuration: {e}"))?;
     let mut leptos_options = conf.leptos_options;
@@ -102,6 +105,36 @@ pub async fn run() -> Result<(), String> {
         ["audit-checkpoint", out] => {
             let db = open_existing(&config).await?;
             audit_checkpoint(&db, &config, Path::new(out)).await
+        }
+        ["seed-load", n, out] => {
+            let out = Path::new(out);
+            if out.exists() {
+                return Err(format!("{} already exists", out.display()));
+            }
+            let n: usize = n.parse().map_err(|_| USAGE.to_owned())?;
+            let db = prepare(&config).await?;
+            let data = crate::infrastructure::fixtures::seed_load(&db, &config, n)
+                .await
+                .map_err(|e| format!("seed-load: {e}"))?;
+            std::fs::write(out, data.to_string()).map_err(|e| format!("write: {e}"))?;
+            println!(
+                "{n} synthetic voters for proposal {} written to {}",
+                data["proposal_id"],
+                out.display()
+            );
+            Ok(())
+        }
+        ["close-votes-at", at] => {
+            if config.env != crate::infrastructure::config::Environment::Test {
+                return Err("close-votes-at: only with DWC_ENV=test".into());
+            }
+            let at = crate::infrastructure::clock::parse_ts(at).ok_or_else(|| USAGE.to_owned())?;
+            let db = open_existing(&config).await?;
+            let closed = crate::application::voting::close_due_votes(&db, at)
+                .await
+                .map_err(|e| format!("close-votes-at: {e}"))?;
+            println!("{}", serde_json::json!({ "closed": closed }));
+            Ok(())
         }
         ["audit-verify", file] => {
             let db = open_existing(&config).await?;
@@ -262,12 +295,13 @@ async fn serve(
         face,
         identity: Arc::new(identity),
     };
-    spawn_reminders(state.clone());
+    let ticker = Duration::from_secs(state.config.ticker_secs.unsigned_abs());
+    spawn_reminders(state.clone(), ticker);
     // Deadline transitions resume from persisted instants after any restart.
     tokio::spawn(crate::application::phases::run_ticker(
         state.db.clone(),
         state.clock.clone(),
-        Duration::from_secs(30),
+        ticker,
     ));
     let app = router(state, leptos_options);
 
@@ -300,10 +334,11 @@ async fn serve(
     }
 }
 
-/// Delivers due scheduled notifications (deadline reminders) every minute.
-fn spawn_reminders(state: AppState) {
+/// Delivers due scheduled notifications (vote opened/result, deadline
+/// reminders) every ticker interval (30 s by default).
+fn spawn_reminders(state: AppState, every: Duration) {
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_secs(60));
+        let mut tick = tokio::time::interval(every);
         loop {
             tick.tick().await;
             match crate::application::notify::remind_due(&state.db, state.now()).await {

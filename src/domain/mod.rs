@@ -6,3 +6,4 @@ pub mod identity;
 pub mod notification;
 pub mod proposals;
 pub mod setup;
+pub mod voting;

@@ -761,13 +761,26 @@ async fn deadlines_expire_open_voting_and_resume_after_restart() {
     let reopened = w.t.db.clone();
     let applied = phases::advance_due(&reopened, debate_end).await.unwrap();
     assert_eq!(applied, vec![(debated.clone(), ProposalStatus::InVoting)]);
+    // Withdrawal only in draft/collection; admin archive only from terminal phases.
+    assert_eq!(
+        proposals::withdraw(&w.ctx(debate_end), &author, &debated, "não quero mais")
+            .await
+            .err(),
+        Some(AppError::PhaseClosed)
+    );
+    let admin = w.admin(debate_end).await;
+    assert_eq!(
+        proposals::archive(&w.ctx(debate_end), &admin, &debated, "limpeza geral")
+            .await
+            .err(),
+        Some(AppError::PhaseClosed)
+    );
 
     let deadline = now + Duration::days(90);
-    assert!(
-        phases::advance_due(&reopened, deadline - ms)
-            .await
-            .unwrap()
-            .is_empty()
+    // The 30-day vote (ends on day 45) is closed by the voting feature: no ballots.
+    assert_eq!(
+        phases::advance_due(&reopened, deadline - ms).await.unwrap(),
+        vec![(debated.clone(), ProposalStatus::QuorumNotReached)]
     );
     assert_eq!(
         w.sign(deadline, &ana, &expiring).await.err(),
@@ -785,35 +798,20 @@ async fn deadlines_expire_open_voting_and_resume_after_restart() {
     );
     let r = w.row(&debated).await;
     assert!(r.vote_snapshot_id.is_some() && r.vote_setup_version_id.is_some());
-    assert_eq!(
+    assert!(
         phases::due_votes(
             &reopened.read().await.unwrap(),
             deadline + Duration::days(30)
         )
         .await
-        .unwrap(),
-        vec![debated.clone()]
-    );
-
-    // Withdrawal only in draft/collection; admin archive only from terminal phases.
-    assert_eq!(
-        proposals::withdraw(&w.ctx(deadline), &author, &debated, "não quero mais")
-            .await
-            .err(),
-        Some(AppError::PhaseClosed)
+        .unwrap()
+        .is_empty()
     );
     assert_eq!(
         proposals::archive(&w.ctx(deadline), &author, &expiring, "limpeza geral")
             .await
             .err(),
         Some(AppError::Forbidden)
-    );
-    let admin = w.admin(deadline).await;
-    assert_eq!(
-        proposals::archive(&w.ctx(deadline), &admin, &debated, "limpeza geral")
-            .await
-            .err(),
-        Some(AppError::PhaseClosed)
     );
     proposals::archive(&w.ctx(deadline), &admin, &expiring, "limpeza geral")
         .await

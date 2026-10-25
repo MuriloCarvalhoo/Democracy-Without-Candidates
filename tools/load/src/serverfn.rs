@@ -47,13 +47,26 @@ pub async fn call(
     endpoint: &str,
     form_body: &str,
 ) -> Result<Option<serde_json::Value>, Box<TransactionError>> {
+    call_as(user, endpoint, form_body, None).await
+}
+
+/// Like [`call`], with an explicit `Cookie` header (synthetic voter session).
+pub async fn call_as(
+    user: &mut GooseUser,
+    endpoint: &str,
+    form_body: &str,
+    cookie: Option<&str>,
+) -> Result<Option<serde_json::Value>, Box<TransactionError>> {
     let origin = user.base_url.origin().ascii_serialization();
-    let builder = user
+    let mut builder = user
         .get_request_builder(&GooseMethod::Post, &format!("/api/{endpoint}"))?
         .header("Origin", origin)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
         .body(form_body.to_owned());
+    if let Some(cookie) = cookie {
+        builder = builder.header("Cookie", cookie);
+    }
     let request = GooseRequest::builder()
         .method(GooseMethod::Post)
         .name(endpoint)

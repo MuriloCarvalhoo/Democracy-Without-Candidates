@@ -13,6 +13,7 @@ use crate::{
         enroll::EnrollPage,
         home::HomePage,
         login::{LoginPage, ResetPasswordPage},
+        metalaws::{MetaLawPage, MetaLawsPage, NewMetaLawPage},
         notifications::{NotificationPreferencesPage, NotificationsPage},
         profile::{PrivacyPage, ProfilePage},
         proposals::{
@@ -21,6 +22,7 @@ use crate::{
         },
         register::RegisterPage,
         shell::Layout,
+        voting::{ResultPage, SetupPage, StatisticsPage, VotePage},
     },
     i18n::t,
 };
@@ -75,6 +77,13 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/propostas/:id") view=ProposalPage/>
                     <Route path=path!("/propostas/:id/editar") view=EditProposalPage/>
                     <Route path=path!("/propostas/:id/assinantes") view=SignersPage/>
+                    <Route path=path!("/propostas/:id/votar") view=VotePage/>
+                    <Route path=path!("/propostas/:id/resultado") view=ResultPage/>
+                    <Route path=path!("/metaleis") view=MetaLawsPage/>
+                    <Route path=path!("/metaleis/nova") view=NewMetaLawPage/>
+                    <Route path=path!("/metaleis/:id") view=MetaLawPage/>
+                    <Route path=path!("/setup") view=SetupPage/>
+                    <Route path=path!("/estatisticas") view=StatisticsPage/>
                     <Route path=path!("/dashboard") view=DashboardPage/>
                     <Route path=path!("/setup/historico") view=SetupHistoryPage/>
                     <Route path=path!("/admin") view=AdminPage/>

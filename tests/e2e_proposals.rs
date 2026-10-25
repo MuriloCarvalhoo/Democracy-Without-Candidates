@@ -16,10 +16,11 @@ async fn visitor_lists_filters_and_reads_seeded_proposals() {
     let app = App::start(&db, &[]);
     let browser = Browser::start().await;
 
-    // Default listing hides archived proposals: 2 collecting, debate, voting, expired.
+    // Default listing hides archived proposals: 2 collecting, debate, 2 voting,
+    // expired and one closed (approved) vote.
     browser.goto_hydrated(&app.url("/propostas")).await;
     browser
-        .wait_text("[data-testid=proposal-total]", |t| t.starts_with("5 "))
+        .wait_text("[data-testid=proposal-total]", |t| t.starts_with("7 "))
         .await;
 
     // Filter after hydration: client-side navigation, no full reload.

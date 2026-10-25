@@ -613,7 +613,7 @@ fn summary_from(row: &Row, tz: Tz) -> Result<ProposalSummary, AppError> {
     })
 }
 
-async fn summaries(
+pub(crate) async fn summaries(
     conn: &Connection,
     tz: Tz,
     filter: &str,
@@ -624,6 +624,19 @@ async fn summaries(
         .iter()
         .map(|r| summary_from(r, tz))
         .collect()
+}
+
+/// Public summary of one published proposal (drafts read as not found).
+pub async fn summary_of(conn: &Connection, tz: Tz, id: &str) -> Result<ProposalSummary, AppError> {
+    summaries(
+        conn,
+        tz,
+        "WHERE p.id = ?1 AND p.status <> 'draft'",
+        vec![id.into()],
+    )
+    .await?
+    .pop()
+    .ok_or(AppError::NotFound)
 }
 
 #[derive(Debug, Clone, Default)]

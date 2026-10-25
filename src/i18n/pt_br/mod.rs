@@ -7,6 +7,7 @@ mod common;
 mod notifications;
 mod profile;
 mod proposals;
+mod voting;
 
 pub fn lookup(key: &str) -> Option<&'static str> {
     common::lookup(key)
@@ -16,4 +17,5 @@ pub fn lookup(key: &str) -> Option<&'static str> {
         .or_else(|| profile::lookup(key))
         .or_else(|| proposals::lookup(key))
         .or_else(|| admin::lookup(key))
+        .or_else(|| voting::lookup(key))
 }

@@ -126,6 +126,10 @@ fn detail_view(d: ProposalDetail, a: Actions) -> impl IntoView {
                 </ul>
                 <p class="hint">{t("proposals.timezone_note")}</p>
             })}
+            {super::vote_links(&id, status)}
+            {(s.kind == crate::domain::proposals::ProposalKind::SetupChange).then(|| view! {
+                <p><A href=format!("/metaleis/{id}")>{t("metalaws.diff_link")}</A></p>
+            })}
             {viewer.clone().map(|v| actions_view(id.clone(), v, a))}
             <h2>{t("proposals.field.body")}</h2>
             <div class="proposal-body" data-testid="proposal-body">{d.body.clone()}</div>

@@ -30,7 +30,7 @@ impl SecretBox {
     /// Loads the configured key file, or a development key under the database directory.
     pub fn load(config: &Config) -> Result<Self, String> {
         match &config.secret_key_file {
-            Some(path) => read_key(path).map(|k| Self::from_key(&k)),
+            Some(path) => read_key(path, config.is_production()).map(|k| Self::from_key(&k)),
             None if config.is_production() => Err("DWC_SECRET_KEY_FILE is required".into()),
             None => {
                 let path = dev_key_path(&config.db_path);
@@ -38,7 +38,7 @@ impl SecretBox {
                     write_dev_key(&path)?;
                     tracing::warn!(path = %path.display(), "generated development secret key; never use it in production");
                 }
-                read_key(&path).map(|k| Self::from_key(&k))
+                read_key(&path, false).map(|k| Self::from_key(&k))
             }
         }
     }
@@ -91,8 +91,26 @@ fn dev_key_path(db_path: &Path) -> PathBuf {
     db_path.with_file_name(format!("{name}.dev-secret.key"))
 }
 
-/// Accepts 32 raw bytes or 64 hex characters.
-fn read_key(path: &Path) -> Result<[u8; 32], String> {
+/// Accepts 32 raw bytes or 64 hex characters. `strict` (production) requires an
+/// owner-only file (no group/other permissions); otherwise it only warns.
+fn read_key(path: &Path, strict: bool) -> Result<[u8; 32], String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path)
+            .map_err(|e| format!("secret key {}: {e}", path.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            if strict {
+                return Err(format!(
+                    "secret key {}: must not be accessible by group/others (chmod 600)",
+                    path.display()
+                ));
+            }
+            tracing::warn!(path = %path.display(), "secret key is accessible by group/others");
+        }
+    }
     let raw = std::fs::read(path).map_err(|e| format!("secret key {}: {e}", path.display()))?;
     let bytes = match raw.len() {
         32 => raw,
@@ -147,14 +165,47 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dev_key_path(&dir.path().join("dev.db"));
         write_dev_key(&path).unwrap();
-        let key = read_key(&path).unwrap();
+        let key = read_key(&path, true).unwrap();
         assert!(write_dev_key(&path).is_err(), "never overwritten");
-        assert_eq!(read_key(&path).unwrap(), key);
+        assert_eq!(read_key(&path, true).unwrap(), key);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn production_key_must_be_owner_only_and_32_bytes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, content: &[u8], mode: u32| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, content).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        let hex_key = format!("{}\n", "ab".repeat(32));
+        let open = write("open.key", hex_key.as_bytes(), 0o640);
+        assert!(read_key(&open, true).unwrap_err().contains("chmod 600"));
+        assert_eq!(
+            read_key(&open, false).unwrap(),
+            [0xab; 32],
+            "dev only warns"
+        );
+        let private = write("private.key", hex_key.as_bytes(), 0o600);
+        assert_eq!(read_key(&private, true).unwrap(), [0xab; 32]);
+        assert_eq!(
+            read_key(&write("raw.key", &[7; 32], 0o400), true).unwrap(),
+            [7; 32]
+        );
+        for (name, content) in [
+            ("short.key", "ab".repeat(20)),
+            ("long.key", "ab".repeat(33)),
+        ] {
+            assert!(read_key(&write(name, content.as_bytes(), 0o600), true).is_err());
         }
     }
 }

@@ -299,6 +299,7 @@ async fn seed_legislative(
             db,
             flags: &flags,
             now: at,
+            clock: None,
             tz,
         };
         let a = actor_of(author).await?;
@@ -340,6 +341,7 @@ async fn seed_legislative(
             db,
             flags: &flags,
             now: at,
+            clock: None,
             tz,
         };
         let a = actor_of(author).await?;
@@ -367,6 +369,7 @@ async fn seed_legislative(
                 db,
                 flags: &flags,
                 now: cast_at,
+                clock: None,
                 tz,
             };
             let choices = [
@@ -425,7 +428,13 @@ where
     F: Fn(usize) -> Fut,
     Fut: std::future::Future<Output = Result<crate::application::actor::Actor, AppError>>,
 {
-    let ctx = Ctx { db, flags, now, tz };
+    let ctx = Ctx {
+        db,
+        flags,
+        now,
+        clock: None,
+        tz,
+    };
     let first = debate::post_comment(
         &ctx,
         &actor_of(0).await?,
@@ -553,6 +562,7 @@ pub async fn seed_load(db: &Db, config: &Config, n: usize) -> Result<serde_json:
         db,
         flags: &flags,
         now,
+        clock: None,
         tz,
     };
     let (author_id, author_token) = &accounts[n];

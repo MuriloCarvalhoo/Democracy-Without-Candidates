@@ -1,6 +1,8 @@
 # Reverse proxy example: automatic HTTPS, the app stays on loopback.
 # The app already sends nosniff, frame, referrer and permissions headers (and HSTS in
 # production); CSRF protection compares Origin with DWC_PUBLIC_ORIGIN, so keep Host/Origin.
+# reverse_proxy sets X-Forwarded-For to the client IP (client-sent values are dropped
+# unless `trusted_proxies` is configured); the app reads it only from DWC_TRUSTED_PROXY.
 <subdominio> {
 	encode zstd gzip
 	request_body {

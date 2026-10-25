@@ -87,13 +87,13 @@ pub async fn sign(
     ctx.flags.require(flags::SIGNATURES)?;
     actor.require(Permission::ProposalSign)?;
     let key = key(actor, idempotency_key, "proposal.sign", id)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     if let Some(key) = &key
         && let Some(previous) = idempotency::lookup(&tx, key).await?
     {
         return Ok(previous);
     }
-    let mut p = open_collection(ctx, &tx, id).await?;
+    let mut p = open_collection(&ctx, &tx, id).await?;
     let snapshot = p
         .collection_snapshot_id
         .as_deref()
@@ -124,7 +124,7 @@ pub async fn sign(
         (id, actor.user_id.as_str(), text_hash, ts(ctx.now)),
     )
     .await?;
-    let count = recount(&tx, ctx, id).await?;
+    let count = recount(&tx, &ctx, id).await?;
     let target = p.signature_target.ok_or(AppError::Internal)?;
     audit::append(
         &tx,
@@ -166,13 +166,13 @@ pub async fn withdraw_signature(
     ctx.flags.require(flags::SIGNATURES)?;
     actor.require(Permission::ProposalSign)?;
     let key = key(actor, idempotency_key, "proposal.unsign", id)?;
-    let tx = ctx.db.write().await?;
+    let (tx, ctx) = ctx.write().await?;
     if let Some(key) = &key
         && let Some(previous) = idempotency::lookup(&tx, key).await?
     {
         return Ok(previous);
     }
-    let p = open_collection(ctx, &tx, id).await?;
+    let p = open_collection(&ctx, &tx, id).await?;
     let changed = tx
         .execute(
             "UPDATE signatures SET active = 0, updated_at = ?3 WHERE proposal_id = ?1 AND user_id = ?2 AND active = 1",
@@ -184,7 +184,7 @@ pub async fn withdraw_signature(
             crate::i18n::t("proposals.error.not_signed").into(),
         ));
     }
-    let count = recount(&tx, ctx, id).await?;
+    let count = recount(&tx, &ctx, id).await?;
     let target = p.signature_target.ok_or(AppError::Internal)?;
     audit::append(
         &tx,

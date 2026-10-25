@@ -93,6 +93,7 @@ impl W {
             db: &self.t.db,
             flags: &self.flags,
             now,
+            clock: None,
             tz: Sao_Paulo,
         }
     }
@@ -347,6 +348,7 @@ async fn concurrent_casts_by_the_same_voter_accept_one() {
                     db: &db,
                     flags: &flags,
                     now: t0(),
+                    clock: None,
                     tz: Sao_Paulo,
                 };
                 let choice = if i % 2 == 0 { Choice::Yes } else { Choice::No };
@@ -396,6 +398,7 @@ async fn cast_racing_close_is_counted_or_rejected_never_lost() {
                     db: &db,
                     flags: &flags,
                     now: deadline - Duration::milliseconds(1),
+                    clock: None,
                     tz: Sao_Paulo,
                 };
                 voting::cast(&ctx, &voter, &id, Choice::Yes, true, None).await
@@ -792,5 +795,34 @@ async fn statistics_suppress_small_territorial_cells() {
     assert!(
         s.by_status.contains(&(ProposalStatus::QuorumNotReached, 1)),
         "13 voters, quorum ceil(20% × 13) = 3"
+    );
+}
+
+#[tokio::test]
+async fn cast_deadline_uses_time_read_after_acquiring_the_writer() {
+    use crate::infrastructure::clock::ManualClock;
+    let w = world(Some(quick())).await;
+    let voter = w.citizen(BNU).await;
+    let author = w.citizen(BNU).await;
+    let id = w.urgent_in_voting(&author, "Relógio").await;
+    w.grant(ends() - Duration::minutes(1), &voter, REAUTH_VOTE, &id)
+        .await;
+    // Context built just before the deadline; the writer is only acquired after it.
+    let clock = ManualClock::new(ends() - Duration::milliseconds(1));
+    let ctx = Ctx {
+        clock: Some(&clock),
+        ..w.ctx(ends() - Duration::milliseconds(1))
+    };
+    clock.set(ends() + Duration::seconds(1));
+    assert_eq!(
+        voting::cast(&ctx, &voter, &id, Choice::Yes, true, None)
+            .await
+            .err(),
+        Some(AppError::PhaseClosed)
+    );
+    assert_eq!(
+        w.count("SELECT COUNT(*) FROM ballots WHERE proposal_id = ?1", &id)
+            .await,
+        0
     );
 }

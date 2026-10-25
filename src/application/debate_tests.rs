@@ -65,6 +65,7 @@ impl World {
             db: &self.t.db,
             flags: &self.flags,
             now,
+            clock: None,
             tz: Sao_Paulo,
         }
     }

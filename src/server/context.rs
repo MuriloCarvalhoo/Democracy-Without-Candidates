@@ -7,7 +7,7 @@ use leptos_axum::{ResponseOptions, extract};
 
 use super::AppState;
 use crate::{
-    application::{actor::Actor, session},
+    application::{actor::Actor, identity::ratelimit, session},
     error::AppError,
 };
 
@@ -133,12 +133,24 @@ fn append_cookie(state: &AppState, name: &str, value: &str, attrs: &str) {
     }
 }
 
-/// Socket peer address (see `application::identity::ratelimit` for proxy limits).
+/// Client address for the per-IP limit, honouring `DWC_TRUSTED_PROXY`
+/// (see `application::identity::ratelimit::client_ip`).
 pub async fn client_ip() -> Option<std::net::IpAddr> {
-    extract::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    let state = state().ok()?;
+    let peer = extract::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .await
-        .ok()
-        .map(|c| c.0.ip())
+        .ok()?
+        .0
+        .ip();
+    let headers: HeaderMap = extract().await.ok()?;
+    ratelimit::client_ip(
+        peer,
+        &state.config.trusted_proxies,
+        headers
+            .get_all("x-forwarded-for")
+            .iter()
+            .map(|v| v.to_str().unwrap_or("")),
+    )
 }
 
 #[cfg(test)]

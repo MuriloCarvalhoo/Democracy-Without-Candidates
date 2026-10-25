@@ -73,6 +73,7 @@ impl AppState {
             db: &self.db,
             flags: &self.flags,
             now: self.now(),
+            clock: Some(&*self.clock),
             tz: self.tz(),
         }
     }

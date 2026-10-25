@@ -7,9 +7,9 @@ use chrono::Duration;
 use turso::Connection;
 
 use super::{
-    ClientKeys, Deps, FaceProof, check_totp, credentials, face_not_confirmed, invalid_credentials,
-    invalid_totp, ratelimit, record_failure, record_totp_step, recovery_code_hash,
-    replace_recovery_codes, verify_face, verify_session_factors,
+    ClientKeys, Deps, FaceProof, attempt, audit_failure, check_totp, credentials,
+    face_not_confirmed, invalid_credentials, invalid_totp, ratelimit, record_totp_step,
+    recovery_code_hash, replace_recovery_codes, verify_face, verify_session_factors,
 };
 use crate::{
     application::{
@@ -121,7 +121,7 @@ async fn load_challenge(
     if deps.now >= expires {
         return Err(step_expired());
     }
-    let challenge = Challenge {
+    Ok(Challenge {
         token_hash: sha256_hex(token),
         user_id: row.get(0)?,
         keys: ClientKeys {
@@ -130,9 +130,7 @@ async fn load_challenge(
         },
         password_ok: row.get::<i64>(2)? == 1,
         face_ok: row.get::<i64>(3)? == 1,
-    };
-    ratelimit::check(&conn, deps.now, &challenge.keys).await?;
-    Ok(challenge)
+    })
 }
 
 /// Marks the challenge consumed; fails if another request consumed it first.
@@ -228,18 +226,19 @@ pub async fn login_password(
     let normalized = normalize_email(email).unwrap_or_else(|| email.trim().to_lowercase());
     let keys = ClientKeys::new(&normalized, ip);
     let conn = deps.db.read().await?;
-    ratelimit::check(&conn, deps.now, &keys).await?;
-    let account = account_by_email(&conn, &normalized).await?;
-    let ok = password_input.chars().count() <= 1024
-        && password::verify(
-            account.as_ref().map(|a| a.password_hash.clone()),
-            password_input,
-        )
-        .await;
-    let Some(account) = account.filter(|_| ok) else {
-        record_failure(deps, &keys, None, "password").await?;
-        return Err(invalid_credentials());
-    };
+    let account = attempt(deps, &keys, None, async {
+        let account = account_by_email(&conn, &normalized).await?;
+        let ok = password_input.chars().count() <= 1024
+            && password::verify(
+                account.as_ref().map(|a| a.password_hash.clone()),
+                password_input,
+            )
+            .await;
+        Ok(account
+            .filter(|_| ok)
+            .ok_or_else(|| ("password", invalid_credentials())))
+    })
+    .await?;
     if account.status == AccountStatus::Blocked {
         return Err(AppError::Forbidden);
     }
@@ -280,10 +279,13 @@ pub async fn auth_face(
     if purpose == Purpose::Login && !c.password_ok {
         return Err(step_expired());
     }
-    if !verify_face(deps, &auth_subject(token), c.user_id.as_deref(), &proof).await? {
-        record_failure(deps, &c.keys, c.user_id.as_deref(), "face").await?;
-        return Err(face_not_confirmed());
-    }
+    attempt(deps, &c.keys, c.user_id.as_deref(), async {
+        let ok = verify_face(deps, &auth_subject(token), c.user_id.as_deref(), &proof).await?;
+        Ok(ok
+            .then_some(())
+            .ok_or_else(|| ("face", face_not_confirmed())))
+    })
+    .await?;
     let user_id = c.user_id.as_deref().ok_or(AppError::Internal)?;
     let conn = deps.db.read().await?;
     let totp_confirmed = credentials(&conn, user_id).await?.totp_secret.is_some();
@@ -324,6 +326,21 @@ async fn ready_for_second_factor(
     }
 }
 
+/// One counted TOTP attempt; parallel guesses within a challenge share the limit.
+async fn totp_attempt(
+    deps: &Deps<'_>,
+    c: &Challenge,
+    user_id: &str,
+    code: &str,
+) -> Result<i64, AppError> {
+    attempt(deps, &c.keys, Some(user_id), async {
+        Ok(check_totp(deps, user_id, code)
+            .await?
+            .ok_or_else(|| ("totp", invalid_totp())))
+    })
+    .await
+}
+
 /// Final login step with TOTP.
 pub async fn login_totp(
     deps: &Deps<'_>,
@@ -332,10 +349,7 @@ pub async fn login_totp(
     code: &str,
 ) -> Result<String, AppError> {
     let (c, user_id) = ready_for_second_factor(deps, token, Purpose::Login, ip).await?;
-    let Some(step) = check_totp(deps, &user_id, code).await? else {
-        record_failure(deps, &c.keys, Some(&user_id), "totp").await?;
-        return Err(invalid_totp());
-    };
+    let step = totp_attempt(deps, &c, &user_id, code).await?;
     let tx = deps.db.write().await?;
     record_totp_step(&tx, &user_id, step).await?;
     consume_challenge(&tx, deps, &c.token_hash).await?;
@@ -373,15 +387,17 @@ pub async fn login_recovery_code(
     code: &str,
 ) -> Result<String, AppError> {
     let (c, user_id) = ready_for_second_factor(deps, token, Purpose::Login, ip).await?;
+    let reserved = ratelimit::reserve(deps.db, deps.now, &c.keys).await?;
     let tx = deps.db.write().await?;
     if !consume_recovery_code(&tx, deps, &user_id, code).await? {
         tx.rollback().await?;
-        record_failure(deps, &c.keys, Some(&user_id), "recovery_code").await?;
+        audit_failure(deps, Some(&user_id), "recovery_code").await?;
         return Err(AppError::validation(
             "recovery",
             t("auth.error.recovery_code"),
         ));
     }
+    ratelimit::release(&tx, reserved).await?;
     consume_challenge(&tx, deps, &c.token_hash).await?;
     tx.execute(
         "UPDATE user_credentials SET totp_reenroll_required = 1, totp_pending_secret = NULL, updated_at = ?2 WHERE user_id = ?1",
@@ -444,10 +460,7 @@ pub async fn reset_finish(
         return Err(AppError::validation("password", t("auth.password.policy")));
     }
     let (c, user_id) = ready_for_second_factor(deps, token, Purpose::PasswordReset, ip).await?;
-    let Some(step) = check_totp(deps, &user_id, code).await? else {
-        record_failure(deps, &c.keys, Some(&user_id), "totp").await?;
-        return Err(invalid_totp());
-    };
+    let step = totp_attempt(deps, &c, &user_id, code).await?;
     let hash = password::hash(new_password).await?;
     let tx = deps.db.write().await?;
     record_totp_step(&tx, &user_id, step).await?;
@@ -471,23 +484,10 @@ pub async fn reset_finish(
     Ok(())
 }
 
-async fn actor_keys(
-    deps: &Deps<'_>,
-    actor: &Actor,
-    ip: Option<std::net::IpAddr>,
-) -> Result<ClientKeys, AppError> {
-    let conn = deps.db.read().await?;
-    Ok(ClientKeys::new(
-        &super::user_email(&conn, &actor.user_id).await?,
-        ip,
-    ))
-}
-
 /// Signed-in password change: current password + face + TOTP. Revokes all sessions.
 pub async fn change_password(
     deps: &Deps<'_>,
     actor: &Actor,
-    ip: Option<std::net::IpAddr>,
     current: &str,
     new_password: &str,
     proof: FaceProof<'_>,
@@ -496,9 +496,7 @@ pub async fn change_password(
     if !password_acceptable(new_password) {
         return Err(AppError::validation("password", t("auth.password.policy")));
     }
-    let keys = actor_keys(deps, actor, ip).await?;
-    let step =
-        verify_session_factors(deps, &actor.user_id, &keys, Some(current), &proof, code).await?;
+    let step = verify_session_factors(deps, &actor.user_id, Some(current), &proof, code).await?;
     let hash = password::hash(new_password).await?;
     let tx = deps.db.write().await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
@@ -524,7 +522,6 @@ pub async fn change_password(
 pub async fn regenerate_recovery_codes(
     deps: &Deps<'_>,
     actor: &Actor,
-    ip: Option<std::net::IpAddr>,
     password_input: &str,
     proof: FaceProof<'_>,
     code: &str,
@@ -532,16 +529,8 @@ pub async fn regenerate_recovery_codes(
     if actor.status != AccountStatus::Active {
         return Err(AppError::Forbidden);
     }
-    let keys = actor_keys(deps, actor, ip).await?;
-    let step = verify_session_factors(
-        deps,
-        &actor.user_id,
-        &keys,
-        Some(password_input),
-        &proof,
-        code,
-    )
-    .await?;
+    let step =
+        verify_session_factors(deps, &actor.user_id, Some(password_input), &proof, code).await?;
     let tx = deps.db.write().await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
     let codes = replace_recovery_codes(&tx, deps.now, &actor.user_id).await?;
@@ -561,7 +550,6 @@ pub async fn regenerate_recovery_codes(
 pub async fn reauthenticate(
     deps: &Deps<'_>,
     actor: &Actor,
-    ip: Option<std::net::IpAddr>,
     action: &str,
     resource: &str,
     proof: FaceProof<'_>,
@@ -582,8 +570,7 @@ pub async fn reauthenticate(
     if actor.status != AccountStatus::Active {
         return Err(AppError::Forbidden);
     }
-    let keys = actor_keys(deps, actor, ip).await?;
-    let step = verify_session_factors(deps, &actor.user_id, &keys, None, &proof, code).await?;
+    let step = verify_session_factors(deps, &actor.user_id, None, &proof, code).await?;
     let tx = deps.db.write().await?;
     record_totp_step(&tx, &actor.user_id, step).await?;
     let id = reauth::grant(&tx, deps.now, &actor.session_hash, action, resource).await?;
@@ -775,7 +762,6 @@ mod tests {
             reauthenticate(
                 &d,
                 &actor,
-                None,
                 "profile:privacy",
                 &e.user_id,
                 FaceProof {
@@ -815,7 +801,6 @@ mod tests {
         reauthenticate(
             &later,
             &actor,
-            None,
             "profile:privacy",
             &e.user_id,
             FaceProof {
@@ -903,7 +888,6 @@ mod tests {
             regenerate_recovery_codes(
                 &d,
                 &actor,
-                None,
                 "senha errada qualquer",
                 FaceProof {
                     challenge: &c,
@@ -919,7 +903,6 @@ mod tests {
         let codes = regenerate_recovery_codes(
             &d,
             &actor,
-            None,
             PASSWORD,
             FaceProof {
                 challenge: &c,
@@ -955,7 +938,6 @@ mod tests {
         change_password(
             &later,
             &actor,
-            None,
             PASSWORD,
             "outra senha bem longa",
             FaceProof {
@@ -993,7 +975,6 @@ mod tests {
             reauthenticate(
                 &d,
                 &actor,
-                None,
                 "bad action",
                 "r",
                 FaceProof {
@@ -1009,7 +990,6 @@ mod tests {
         reauthenticate(
             &d,
             &actor,
-            None,
             "proposal:sign",
             "p1",
             FaceProof {
@@ -1035,7 +1015,6 @@ mod tests {
             reauthenticate(
                 &d,
                 &actor,
-                None,
                 "proposal:sign",
                 "p1",
                 FaceProof {
@@ -1053,5 +1032,158 @@ mod tests {
         )
         .await;
         assert_eq!(payload, r#"{"action":"proposal:sign"}"#);
+    }
+
+    async fn reauth_with(
+        w: &World,
+        d: &Deps<'_>,
+        actor: &Actor,
+        code: &str,
+    ) -> Result<String, AppError> {
+        let c = issue_face_challenge(&w.t.db, d.now, &super::super::user_subject(&actor.user_id))
+            .await
+            .unwrap();
+        reauthenticate(
+            d,
+            actor,
+            "proposal:vote",
+            "p1",
+            FaceProof {
+                challenge: &c,
+                image: FACE,
+            },
+            code,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn anonymous_login_failures_never_block_session_reauth() {
+        let w = World::new().await;
+        let e = enrolled(&w, "ana@example.org").await;
+        let d = w.deps();
+        let actor = actor_for(&w, &e.session_token).await;
+        for _ in 0..ratelimit::ACCOUNT_LIMIT {
+            assert_eq!(
+                login_password(&d, None, &e.email, "senha errada qualquer")
+                    .await
+                    .err(),
+                Some(invalid_credentials())
+            );
+        }
+        assert_eq!(
+            login_password(&d, None, &e.email, PASSWORD).await.err(),
+            Some(AppError::RateLimited)
+        );
+        let code = totp::code_at(&e.totp_secret, w.now.timestamp());
+        reauth_with(&w, &d, &actor, &code).await.unwrap();
+
+        // Failures of the signed-in session itself are still limited.
+        for _ in 0..ratelimit::ACCOUNT_LIMIT {
+            assert_eq!(
+                reauth_with(&w, &d, &actor, &wrong_code(&code)).await.err(),
+                Some(invalid_totp())
+            );
+        }
+        let later = w.at(w.now + Duration::seconds(30));
+        let next = totp::code_at(&e.totp_secret, later.now.timestamp());
+        assert_eq!(
+            reauth_with(&w, &later, &actor, &next).await.err(),
+            Some(AppError::RateLimited)
+        );
+    }
+
+    /// Runs `n` copies of `call` concurrently on worker threads.
+    async fn parallel<F, Fut>(n: usize, call: F) -> Vec<Result<(), AppError>>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<(), AppError>> + Send + 'static,
+    {
+        let tasks: Vec<_> = (0..n).map(|_| tokio::spawn(call())).collect();
+        let mut out = Vec::new();
+        for t in tasks {
+            out.push(t.await.unwrap());
+        }
+        out
+    }
+
+    fn task_deps(
+        db: &crate::infrastructure::db::Db,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Deps<'_> {
+        static FACE_VERIFIER: crate::infrastructure::face::FaceVerifier =
+            crate::infrastructure::face::FaceVerifier::Synthetic;
+        static SECRETS: std::sync::LazyLock<crate::infrastructure::secrets::SecretBox> =
+            std::sync::LazyLock::new(|| {
+                crate::infrastructure::secrets::SecretBox::from_key(&[9; 32])
+            });
+        Deps {
+            db,
+            now,
+            face: &FACE_VERIFIER,
+            secrets: &SECRETS,
+            policy: session::SessionPolicy::from_secs(900, 8 * 3600),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn parallel_wrong_attempts_never_exceed_the_limit() {
+        let w = World::new().await;
+        let e = enrolled(&w, "ana@example.org").await;
+        let limit = ratelimit::ACCOUNT_LIMIT as usize;
+        let count_errors = |results: &[Result<(), AppError>], expected: AppError| {
+            let rejected = results
+                .iter()
+                .filter(|r| r.as_ref().err() == Some(&expected))
+                .count();
+            let limited = results
+                .iter()
+                .filter(|r| r.as_ref().err() == Some(&AppError::RateLimited))
+                .count();
+            (rejected, limited)
+        };
+
+        let results = parallel(3 * limit, || {
+            let (db, email, now) = (w.t.db.clone(), e.email.clone(), w.now);
+            async move {
+                login_password(&task_deps(&db, now), None, &email, "senha errada qualquer")
+                    .await
+                    .map(|_| ())
+            }
+        })
+        .await;
+        assert_eq!(
+            count_errors(&results, invalid_credentials()),
+            (limit, 2 * limit)
+        );
+
+        // Parallel TOTP guesses within one challenge share the same limit.
+        let later = w.at(w.now + ratelimit::WINDOW + Duration::seconds(1));
+        let (token, _) = login_password(&later, None, &e.email, PASSWORD)
+            .await
+            .unwrap();
+        let token = token.unwrap();
+        face_step(&w, &later, &token, Purpose::Login, FACE)
+            .await
+            .unwrap();
+        let wrong = wrong_code(&totp::code_at(&e.totp_secret, later.now.timestamp()));
+        let results = parallel(3 * limit, || {
+            let (db, token, wrong, now) = (w.t.db.clone(), token.clone(), wrong.clone(), later.now);
+            async move {
+                login_totp(&task_deps(&db, now), None, &token, &wrong)
+                    .await
+                    .map(|_| ())
+            }
+        })
+        .await;
+        assert_eq!(count_errors(&results, invalid_totp()), (limit, 2 * limit));
+        assert_eq!(
+            count(
+                &w,
+                "SELECT COUNT(*) FROM audit_events WHERE kind = 'identity.auth_failed'"
+            )
+            .await,
+            2 * limit as i64
+        );
     }
 }

@@ -192,6 +192,14 @@ pub async fn public_view(
     .transpose()
 }
 
+/// Name shown on public pages: the public profile name, otherwise a neutral label.
+pub async fn public_label(conn: &Connection, user_id: &str) -> Result<String, AppError> {
+    Ok(match public_view(conn, user_id).await? {
+        Some(p) => p.name,
+        None => t("debate.author.private").to_owned(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

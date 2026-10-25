@@ -32,7 +32,6 @@ pub async fn request_reauth(
     auth::reauthenticate(
         &state.identity_deps(),
         &actor,
-        context::client_ip().await,
         bounded(&action, "action", 64)?,
         bounded(&resource, "resource", 128)?,
         FaceProof {

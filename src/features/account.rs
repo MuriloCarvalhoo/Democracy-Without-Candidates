@@ -31,7 +31,6 @@ pub async fn change_password(
     auth::change_password(
         &state.identity_deps(),
         &actor,
-        context::client_ip().await,
         bounded(&current_password, "password", 1024)?,
         bounded(&new_password, "password", 1024)?,
         FaceProof {
@@ -63,7 +62,6 @@ pub async fn regenerate_codes(
     auth::regenerate_recovery_codes(
         &state.identity_deps(),
         &actor,
-        context::client_ip().await,
         bounded(&password, "password", 1024)?,
         FaceProof {
             challenge: bounded(&face_challenge, "face", 64)?,

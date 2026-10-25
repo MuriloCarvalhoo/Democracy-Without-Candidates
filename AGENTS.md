@@ -12,6 +12,7 @@
 - The remaining defaults were delegated by the user for later review: follow the explicitly provisional SDD/PRD baseline, but keep real identity/private voting blocked until evidence.
 - Email identifies the login account; do not require CPF or another national identity document. Email/face matching alone do not establish one-person uniqueness.
 - Online-only product scope. No offline participation, physical voting or physical signature collection. PWA installation does not imply offline operation.
+- Write Rust following `docs/rust-praticas-da-documentacao.md` §1–3 (memory, speed, Clippy `perf` lints); measure before adopting ⚠️ items. Its §4–6 describe another repository (llama-rs), not this one.
 - Start with one application package, organized into domain, application, infrastructure and feature modules. Add crates or services only for a demonstrated need.
 - Keep business rules and authorization in server-side application/domain code. Leptos server functions are network endpoints, not trusted calls.
 - The previous NestJS/React/PostgreSQL architecture is superseded. Current guides must match the approved Rust architecture; Git preserves the previous documents.

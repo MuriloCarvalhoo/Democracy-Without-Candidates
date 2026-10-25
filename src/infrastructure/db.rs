@@ -1,7 +1,12 @@
 //! TursoDB access. One process owns the database; writes are serialized through a
 //! single connection because concurrent `BEGIN IMMEDIATE` returns `Busy`.
+//! Reads use pooled connections: in WAL mode a read sees the last committed
+//! snapshot and never waits for the writer (no dirty reads).
 
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex as StdMutex},
+};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use turso::{Builder, Connection, Database, Row};
@@ -10,10 +15,15 @@ use turso::{Builder, Connection, Database, Row};
 /// retried by the engine for up to this long before `Busy` reaches the caller.
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Idle read connections kept for reuse. Not a concurrency limit: when the pool
+/// is empty a new connection is opened, and extras are closed on return.
+const MAX_IDLE_READERS: usize = 32;
+
 #[derive(Clone)]
 pub struct Db {
     database: Database,
     writer: Arc<Mutex<Connection>>,
+    readers: Arc<StdMutex<Vec<Connection>>>,
 }
 
 impl Db {
@@ -31,15 +41,41 @@ impl Db {
         Ok(Self {
             database,
             writer: Arc::new(Mutex::new(writer)),
+            readers: Arc::new(StdMutex::new(Vec::with_capacity(MAX_IDLE_READERS))),
         })
     }
 
-    /// New read connection with a consistent snapshot per statement/transaction.
-    pub async fn read(&self) -> Result<Connection, turso::Error> {
+    /// Read connection with a consistent snapshot per statement/transaction,
+    /// reused from the pool when one is idle. Rows must not outlive the guard.
+    pub async fn read(&self) -> Result<ReadConn, turso::Error> {
+        let pooled = self.readers.lock().ok().and_then(|mut idle| idle.pop());
+        let conn = match pooled {
+            Some(conn) => conn,
+            None => {
+                let conn = self.database.connect()?;
+                conn.busy_timeout(BUSY_TIMEOUT)?;
+                conn.execute("PRAGMA foreign_keys = ON", ()).await?;
+                conn
+            }
+        };
+        Ok(ReadConn {
+            conn: Some(conn),
+            pool: self.readers.clone(),
+        })
+    }
+
+    /// New connection outside the pool, for statements that must not be
+    /// re-executed after a schema re-preparation on a long-lived connection
+    /// (`VACUUM INTO` fails when its output file already exists).
+    pub async fn read_unpooled(&self) -> Result<Connection, turso::Error> {
         let conn = self.database.connect()?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
-        conn.execute("PRAGMA foreign_keys = ON", ()).await?;
         Ok(conn)
+    }
+
+    #[cfg(test)]
+    fn idle_readers(&self) -> usize {
+        self.readers.lock().map(|idle| idle.len()).unwrap_or(0)
     }
 
     /// Starts an immediate write transaction on the single writer connection.
@@ -51,6 +87,35 @@ impl Db {
         }
         conn.execute("BEGIN IMMEDIATE", ()).await?;
         Ok(WriteTx { conn })
+    }
+}
+
+/// Pooled read connection; returned to the pool on drop only when it is back in
+/// autocommit mode (no open transaction), otherwise closed.
+pub struct ReadConn {
+    conn: Option<Connection>,
+    pool: Arc<StdMutex<Vec<Connection>>>,
+}
+
+impl std::ops::Deref for ReadConn {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.conn.as_ref().expect("connection present until drop")
+    }
+}
+
+impl Drop for ReadConn {
+    fn drop(&mut self) {
+        let Some(conn) = self.conn.take() else { return };
+        if !matches!(conn.is_autocommit(), Ok(true)) {
+            return;
+        }
+        if let Ok(mut idle) = self.pool.lock()
+            && idle.len() < MAX_IDLE_READERS
+        {
+            idle.push(conn);
+        }
     }
 }
 
@@ -191,5 +256,66 @@ mod concurrency_tests {
             errors.len(),
             errors.first()
         );
+        assert!(
+            db.idle_readers() <= MAX_IDLE_READERS,
+            "idle pool stays bounded"
+        );
+        assert!(db.idle_readers() > 0, "read connections are reused");
+    }
+
+    async fn counter(conn: &Connection) -> Option<i64> {
+        query_opt(conn, "SELECT value FROM synthetic_counter WHERE id = 1", ())
+            .await
+            .unwrap()
+            .map(|r| r.get(0).unwrap())
+    }
+
+    async fn bump(db: &Db) {
+        let tx = db.write().await.unwrap();
+        tx.execute(
+            "INSERT INTO synthetic_counter (id, value, updated_at) VALUES (1, 1, 't')
+             ON CONFLICT(id) DO UPDATE SET value = value + 1",
+            (),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    /// A reused connection must not keep an old snapshot: after a partially read
+    /// statement (`query_opt`) it sees writes committed in the meantime.
+    #[tokio::test]
+    async fn reused_connection_sees_later_commits() {
+        let t = testing::migrated().await;
+        bump(&t.db).await;
+        {
+            let conn = t.db.read().await.unwrap();
+            let _ = query_opt(&conn, "SELECT id FROM jurisdictions UNION ALL SELECT 1", ())
+                .await
+                .unwrap();
+            assert_eq!(counter(&conn).await, Some(1));
+        }
+        assert_eq!(t.db.idle_readers(), 1);
+        bump(&t.db).await;
+        let conn = t.db.read().await.unwrap();
+        assert_eq!(t.db.idle_readers(), 0, "the pooled connection was reused");
+        assert_eq!(counter(&conn).await, Some(2));
+    }
+
+    /// A connection dropped inside a transaction is closed, never returned dirty.
+    #[tokio::test]
+    async fn connection_mid_transaction_is_not_returned() {
+        let t = testing::migrated().await;
+        bump(&t.db).await;
+        {
+            let conn = t.db.read().await.unwrap();
+            conn.execute("BEGIN", ()).await.unwrap();
+            assert_eq!(counter(&conn).await, Some(1));
+        }
+        assert_eq!(t.db.idle_readers(), 0, "dirty connection discarded");
+        bump(&t.db).await;
+        let conn = t.db.read().await.unwrap();
+        assert!(conn.is_autocommit().unwrap());
+        assert_eq!(counter(&conn).await, Some(2));
     }
 }

@@ -196,7 +196,7 @@ pub async fn iam_policies() -> Result<Vec<PolicySummary>, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    iam::list_policies(&state.db.read().await?, &actor).await
+    iam::list_policies(&*state.db.read().await?, &actor).await
 }
 
 #[server(endpoint = "iam/policy")]
@@ -208,7 +208,7 @@ pub async fn iam_policy(id: String) -> Result<PolicyView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    iam::get_policy(&state.db.read().await?, &actor, srv::id(&id)?).await
+    iam::get_policy(&*state.db.read().await?, &actor, srv::id(&id)?).await
 }
 
 #[server(endpoint = "iam/groups")]
@@ -220,7 +220,7 @@ pub async fn iam_groups() -> Result<Vec<GroupSummary>, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    iam::list_groups(&state.db.read().await?, &actor).await
+    iam::list_groups(&*state.db.read().await?, &actor).await
 }
 
 #[server(endpoint = "iam/group")]
@@ -232,7 +232,7 @@ pub async fn iam_group(id: String) -> Result<GroupView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    iam::get_group(&state.db.read().await?, &actor, srv::id(&id)?).await
+    iam::get_group(&*state.db.read().await?, &actor, srv::id(&id)?).await
 }
 
 #[server(endpoint = "iam/users")]
@@ -245,7 +245,7 @@ pub async fn iam_users(query: String) -> Result<Vec<UserRef>, AppError> {
     let state = context::state()?;
     let actor = context::require_actor().await?;
     iam::search_users(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &actor,
         bounded(&query, "query", 254)?,
     )
@@ -261,7 +261,7 @@ pub async fn iam_user(id: String) -> Result<UserView, AppError> {
     use crate::{application::iam, server::context};
     let state = context::state()?;
     let actor = context::require_actor().await?;
-    iam::user_detail(&state.db.read().await?, &actor, srv::id(&id)?).await
+    iam::user_detail(&*state.db.read().await?, &actor, srv::id(&id)?).await
 }
 
 #[server(endpoint = "iam/simulate")]
@@ -278,7 +278,7 @@ pub async fn iam_simulate(
     let state = context::state()?;
     let actor = context::require_actor().await?;
     iam::simulate(
-        &state.db.read().await?,
+        &*state.db.read().await?,
         &actor,
         bounded(&email, "email", 254)?,
         bounded(&action, "action", 64)?,

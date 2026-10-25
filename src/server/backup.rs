@@ -55,7 +55,7 @@ pub async fn snapshot(db: &Db, dest: &Path) -> Result<(), BackupError> {
     let wal = PathBuf::from(format!("{tmp_str}-wal"));
     let _ = std::fs::remove_file(&tmp);
     let _ = std::fs::remove_file(&wal);
-    let conn = db.read().await?;
+    let conn = db.read_unpooled().await?;
     // VACUUM INTO takes a literal path only (no bound parameters).
     let result = conn.execute(&format!("VACUUM INTO '{tmp_str}'"), ()).await;
     drop(conn);

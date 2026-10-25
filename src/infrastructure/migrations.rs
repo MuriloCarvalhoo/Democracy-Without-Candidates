@@ -28,6 +28,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!("0400_voting"),
     migration!("0450_audit_notifications"),
     migration!("0500_iam"),
+    migration!("0520_performance"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -53,7 +54,7 @@ pub async fn run(db: &Db) -> Result<Vec<&'static str>, MigrationError> {
     .await?;
     tx.commit().await?;
 
-    let applied_versions = verified_applied(&db.read().await?).await?;
+    let applied_versions = verified_applied(&*db.read().await?).await?;
     let mut newly = Vec::new();
     for m in MIGRATIONS {
         if applied_versions.iter().any(|v| v == m.version) {
@@ -167,7 +168,10 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
 
-        assert_eq!(run(&db).await.unwrap(), vec!["0500_iam"]);
+        assert_eq!(
+            run(&db).await.unwrap(),
+            vec!["0500_iam", "0520_performance"]
+        );
         let conn = db.read().await.unwrap();
         let rows = super::super::db::query_all(
             &conn,
@@ -193,6 +197,91 @@ mod tests {
                 .is_err(),
             "roles table dropped"
         );
+    }
+
+    /// `0520_performance` backfills ballot counters from existing ballots.
+    #[tokio::test]
+    async fn performance_migration_backfills_ballot_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("counts.db")).await.unwrap();
+        let tx = db.write().await.unwrap();
+        tx.execute(
+            "CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
+            (),
+        )
+        .await
+        .unwrap();
+        for m in MIGRATIONS
+            .iter()
+            .take_while(|m| m.version != "0520_performance")
+        {
+            tx.execute_batch(m.sql).await.unwrap();
+            tx.execute(
+                "INSERT INTO schema_migrations VALUES (?1, ?2, 'before')",
+                (m.version, sha256_hex(m.sql)),
+            )
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+        // Minimal rows only: the snapshot's setup version is irrelevant here.
+        let data = db.read().await.unwrap();
+        data.execute("PRAGMA foreign_keys = OFF", ()).await.unwrap();
+        data.execute_batch(
+            "INSERT INTO jurisdictions (id, code, kind, name) VALUES ('br', 'BR', 'national', 'Brasil');
+             INSERT INTO users (id, email, name, password_hash, status, municipality_id, state_id, country_id, created_at, updated_at) VALUES
+               ('u1', '1@x.test', 'U', 'x', 'active', 'br', 'br', 'br', 't', 't'),
+               ('u2', '2@x.test', 'U', 'x', 'active', 'br', 'br', 'br', 't', 't');
+             INSERT INTO electorate_snapshots (id, proposal_id, phase, jurisdiction_id, setup_version_id, member_count, taken_at)
+               VALUES ('s1', 'p1', 'voting', 'br', 'sv', 2, 't');
+             INSERT INTO proposals (id, kind, jurisdiction_id, author_id, title, summary, body, normalized_title, normalized_body_hash, text_hash, status, created_at, updated_at, published_at) VALUES
+               ('p1', 'urgent_law', 'br', 'u1', 'A', 'a', 'a', 'a', 'h', 'h', 'in_voting', 't', 't', 't'),
+               ('p2', 'urgent_law', 'br', 'u1', 'B', 'b', 'b', 'b', 'h', 'h', 'in_voting', 't', 't', 't');
+             INSERT INTO ballots (id, proposal_id, user_id, snapshot_id, choice, visibility, consented_at, cast_at) VALUES
+               ('b1', 'p1', 'u1', 's1', 'yes', 'public', 't', 't'),
+               ('b2', 'p1', 'u2', 's1', 'no', 'public', 't', 't');",
+        )
+        .await
+        .unwrap();
+        drop(data);
+        assert_eq!(run(&db).await.unwrap(), vec!["0520_performance"]);
+        let conn = db.read().await.unwrap();
+        let rows = super::super::db::query_all(
+            &conn,
+            "SELECT proposal_id, ballots FROM ballot_counts ORDER BY proposal_id",
+            (),
+        )
+        .await
+        .unwrap();
+        let got: Vec<(String, i64)> = rows
+            .iter()
+            .map(|r| (r.get(0).unwrap(), r.get(1).unwrap()))
+            .collect();
+        assert_eq!(got, vec![("p1".to_owned(), 2)]);
+    }
+
+    /// Expiry cleanups and territorial account lookups use an index.
+    #[tokio::test]
+    async fn cleanup_and_territory_queries_use_indexes() {
+        let t = migrated().await;
+        let conn = t.db.read().await.unwrap();
+        for sql in [
+            "DELETE FROM face_challenges WHERE expires_at < ?1",
+            "DELETE FROM auth_challenges WHERE expires_at < ?1",
+            "DELETE FROM auth_failures WHERE occurred_at <= ?1",
+            "SELECT id FROM users WHERE country_id = ?1 AND status = 'active'",
+            "SELECT id FROM users WHERE state_id = ?1 AND status = 'active'",
+            "SELECT id FROM users WHERE municipality_id = ?1 AND status = 'active'",
+        ] {
+            let plan: Vec<String> =
+                super::super::db::query_all(&conn, &format!("EXPLAIN QUERY PLAN {sql}"), ["x"])
+                    .await
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.get::<String>(3).unwrap())
+                    .collect();
+            assert!(plan.iter().any(|p| p.contains("INDEX")), "{sql}: {plan:?}");
+        }
     }
 
     #[tokio::test]

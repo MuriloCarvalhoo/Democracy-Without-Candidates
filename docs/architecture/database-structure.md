@@ -12,8 +12,9 @@ Atualizado em 2026-10-25. Banco aprovado: TursoDB local pela crate Rust `turso` 
 | `0400_voting` | Cédulas públicas demonstrativas e resultados imutáveis |
 | `0450_audit_notifications` | Checkpoints, preferências e agendamento de notificações |
 | `0500_iam` | Políticas IAM (`iam_policies`, gerenciadas por trigger), grupos e anexos usuário/grupo; converte `user_roles` (CITIZEN→`Cidadao`, AUDITOR→`Auditor`, COUNTRY_ADMIN→`AdministratorAccess`) e remove a tabela |
+| `0520_performance` | Índices de expiração (`face_challenges`, `auth_challenges`, `auth_failures`) e `users(country_id, status)`; tabela `ballot_counts` (cédulas aceitas por proposta, incrementada na transação do voto, preenchida a partir de `ballots`) |
 
-Verificado no motor real: CHECK, UNIQUE, FK, triggers, RETURNING, ON CONFLICT, `VACUUM INTO` e `PRAGMA integrity_check`. Dois escritores simultâneos retornam Busy; triggers com cadeias longas de `OR` estouram a pilha em debug.
+Verificado no motor real: CHECK, UNIQUE, FK, triggers, RETURNING, ON CONFLICT, `VACUUM INTO` e `PRAGMA integrity_check`. Dois escritores simultâneos retornam Busy (escritas passam pelo escritor único `Db::write()`); leituras reaproveitam conexões de um pool (`Db::read()`, até 32 ociosas, descartadas se devolvidas dentro de transação) e veem o último commit em WAL, sem esperar o escritor e sem leitura suja; triggers com cadeias longas de `OR` estouram a pilha em debug.
 
 ## País, processo e armazenamento
 
@@ -117,7 +118,7 @@ Um campo `zkp_proof`, um hash anônimo ou ocultar `user_id` não especifica sigi
 4. Aceitação e fechamento coordenados transacionalmente; resultados consistentes com registros persistidos após falha/restart.
 5. Auditoria/recibo e efeito de negócio consistentes conforme protocolo, sem registrar um sucesso que não foi persistido.
 
-Usar constraints e transações do motor real conforme a regra, com testes de rollback, concorrência, restart e falha. Índices devem apoiar consultas por status, tipo, jurisdição, autoria, proposta e data conforme uso concreto; leituras paginadas e limites são necessários. Contadores e tabelas de resultado derivados precisam de critérios de consistência e reconstrução.
+Usar constraints e transações do motor real conforme a regra, com testes de rollback, concorrência, restart e falha. Índices devem apoiar consultas por status, tipo, jurisdição, autoria, proposta e data conforme uso concreto; leituras paginadas e limites são necessários. Contadores e tabelas de resultado derivados precisam de critérios de consistência e reconstrução. Implementado: `proposals.signature_count` e `ballot_counts.ballots` mudam na mesma transação da linha que alteram (sem `COUNT(*)` sob o escritor); `check-db` reporta `counter_mismatch` contra as linhas e os filtros territoriais de contas usam a coluna do tipo da jurisdição (`application::territory`).
 
 ## Auditoria e retenção
 

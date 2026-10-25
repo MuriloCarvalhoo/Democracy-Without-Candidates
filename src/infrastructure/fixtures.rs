@@ -262,7 +262,7 @@ async fn seed_legislative(
     let actor_of = |i: usize| {
         let (id, hash) = citizens[i].clone();
         async move {
-            actor::load(&db.read().await?, &id, &hash)
+            actor::load(&*db.read().await?, &id, &hash)
                 .await?
                 .ok_or_else(|| AppError::internal("missing or invalid stored value"))
         }
@@ -590,7 +590,7 @@ pub async fn seed_load(db: &Db, config: &Config, n: usize) -> Result<serde_json:
     };
     let (author_id, author_token) = &accounts[n];
     let author_hash = session::token_hash(author_token);
-    let author = actor::load(&db.read().await?, author_id, &author_hash)
+    let author = actor::load(&*db.read().await?, author_id, &author_hash)
         .await?
         .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
     let publish = |kind: ProposalKind, title: String| {

@@ -49,18 +49,26 @@ impl Phase {
     }
 }
 
-const ELIGIBLE: &str = "FROM users u
-    WHERE u.status = 'active'
+/// Eligible accounts of the jurisdiction whose kind maps to `column`
+/// (see [`super::territory::users_column`]); `?1` is the jurisdiction id.
+fn eligible(column: &str) -> String {
+    format!(
+        "FROM users u
+    WHERE u.{column} = ?1 AND u.status = 'active'
       AND (EXISTS (SELECT 1 FROM iam_user_policies up WHERE up.user_id = u.id AND up.policy_id = 'pol-cidadao')
            OR EXISTS (SELECT 1 FROM iam_user_groups ug JOIN iam_group_policies gp ON gp.group_id = ug.group_id
-                      WHERE ug.user_id = u.id AND gp.policy_id = 'pol-cidadao'))
-      AND (u.municipality_id = ?1 OR u.state_id = ?1 OR u.country_id = ?1)";
+                      WHERE ug.user_id = u.id AND gp.policy_id = 'pol-cidadao'))"
+    )
+}
 
 /// Number of eligible accounts of a jurisdiction right now.
 pub async fn electorate_count(conn: &Connection, jurisdiction_id: &str) -> Result<u64, AppError> {
+    let Some(column) = super::territory::users_column(conn, jurisdiction_id).await? else {
+        return Ok(0);
+    };
     Ok(query_opt(
         conn,
-        &format!("SELECT COUNT(*) {ELIGIBLE}"),
+        &format!("SELECT COUNT(*) {}", eligible(column)),
         [jurisdiction_id],
     )
     .await?
@@ -94,10 +102,14 @@ pub async fn snapshot(
         (id.as_str(), proposal_id, phase.as_db(), jurisdiction_id, setup_version_id, count, ts(now)),
     )
     .await?;
+    let column = super::territory::users_column(tx, jurisdiction_id)
+        .await?
+        .ok_or_else(|| AppError::internal("unknown jurisdiction"))?;
     let inserted = tx
         .execute(
             &format!(
-                "INSERT INTO electorate_members (snapshot_id, user_id) SELECT ?2, u.id {ELIGIBLE}"
+                "INSERT INTO electorate_members (snapshot_id, user_id) SELECT ?2, u.id {}",
+                eligible(column)
             ),
             (jurisdiction_id, id.as_str()),
         )
@@ -281,7 +293,7 @@ pub async fn advance_due(
     now: DateTime<Utc>,
 ) -> Result<Vec<(String, ProposalStatus)>, AppError> {
     let now_ts = ts(now);
-    let candidates = due(&db.read().await?, &now_ts).await?;
+    let candidates = due(&*db.read().await?, &now_ts).await?;
     let mut applied = Vec::new();
     for (id, _) in candidates {
         let tx = db.write().await?;

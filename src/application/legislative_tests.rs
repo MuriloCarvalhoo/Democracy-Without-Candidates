@@ -1114,3 +1114,63 @@ async fn signature_deadline_uses_time_read_after_acquiring_the_writer() {
         Some(AppError::PhaseClosed)
     );
 }
+
+/// Deterministic xorshift for reproducible "random" sequences.
+fn next(seed: &mut u64) -> u64 {
+    *seed ^= *seed << 13;
+    *seed ^= *seed >> 7;
+    *seed ^= *seed << 17;
+    *seed
+}
+
+/// The incrementally maintained `signature_count` equals the active signatures
+/// after any sequence of signs, withdrawals, repeats and the closing threshold.
+#[tokio::test]
+async fn signature_counter_matches_active_signatures_after_random_sequences() {
+    let w = world().await;
+    let now = at("2026-10-24T12:00:00Z");
+    w.adopt(now, &all_must_sign()).await;
+    let author = w.citizen(now, "4202404").await;
+    let mut people = Vec::new();
+    for _ in 0..6 {
+        people.push(w.citizen(now, "4202404").await);
+    }
+    let id = w
+        .publish(now, &author, ProposalKind::NormalLaw, "Contador")
+        .await;
+    assert_eq!(w.row(&id).await.signature_target, Some(7));
+    let check = |step: usize| {
+        let id = id.clone();
+        let w = &w;
+        async move {
+            let stored = w.row(&id).await.signature_count as i64;
+            let actual = w
+                .count(
+                    "SELECT COUNT(*) FROM signatures WHERE proposal_id = ?1 AND active = 1",
+                    &id,
+                )
+                .await;
+            assert_eq!(stored, actual, "step {step}");
+        }
+    };
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+    for step in 0..80 {
+        let r = next(&mut seed);
+        let who = &people[(r >> 8) as usize % people.len()];
+        if r.is_multiple_of(3) {
+            let _ = signatures::withdraw_signature(&w.ctx(now), who, &id, None).await;
+        } else {
+            let _ = w.sign(now, who, &id).await;
+        }
+        check(step).await;
+    }
+    for who in people.iter().chain([&author]) {
+        let _ = w.sign(now, who, &id).await;
+    }
+    check(usize::MAX).await;
+    assert_eq!(w.row(&id).await.status, ProposalStatus::InDebate);
+    let integrity = super::voting::integrity(&w.t.db.read().await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(integrity.counter_mismatch, 0);
+}

@@ -68,7 +68,7 @@ pub async fn require_public_read(
         other => other?,
     };
     let state = state()?;
-    crate::application::iam::require_viewer(&state.db.read().await?, viewer.as_ref(), permission)
+    crate::application::iam::require_viewer(&*state.db.read().await?, viewer.as_ref(), permission)
         .await
 }
 

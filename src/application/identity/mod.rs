@@ -91,6 +91,27 @@ pub async fn issue_face_challenge(
     Ok(challenge)
 }
 
+/// Consumes the challenge once inside the caller's transaction.
+async fn consume_face_challenge_in(
+    conn: &Connection,
+    now: DateTime<Utc>,
+    subject: &str,
+    challenge: &str,
+) -> Result<(), AppError> {
+    let changed = conn
+        .execute(
+            "UPDATE face_challenges SET consumed_at = ?3
+             WHERE challenge_hash = ?1 AND subject = ?2 AND consumed_at IS NULL AND expires_at > ?3",
+            (sha256_hex(challenge), subject, ts(now)),
+        )
+        .await?;
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(AppError::validation("face", t("auth.error.face_challenge")))
+    }
+}
+
 /// Consumes the challenge once (its own transaction, committed before the engine call).
 async fn consume_face_challenge(
     db: &Db,
@@ -99,19 +120,9 @@ async fn consume_face_challenge(
     challenge: &str,
 ) -> Result<(), AppError> {
     let tx = db.write().await?;
-    let changed = tx
-        .execute(
-            "UPDATE face_challenges SET consumed_at = ?3
-             WHERE challenge_hash = ?1 AND subject = ?2 AND consumed_at IS NULL AND expires_at > ?3",
-            (sha256_hex(challenge), subject, ts(now)),
-        )
-        .await?;
+    consume_face_challenge_in(&tx, now, subject, challenge).await?;
     tx.commit().await?;
-    if changed == 1 {
-        Ok(())
-    } else {
-        Err(AppError::validation("face", t("auth.error.face_challenge")))
-    }
+    Ok(())
 }
 
 struct Credentials {
@@ -164,6 +175,15 @@ async fn verify_face(
     proof: &FaceProof<'_>,
 ) -> Result<bool, AppError> {
     consume_face_challenge(deps.db, deps.now, subject, proof.challenge).await?;
+    match_face(deps, user_id, proof).await
+}
+
+/// Compares a capture (challenge already consumed) with the enrolled template.
+async fn match_face(
+    deps: &Deps<'_>,
+    user_id: Option<&str>,
+    proof: &FaceProof<'_>,
+) -> Result<bool, AppError> {
     let Some(user_id) = user_id else {
         return Ok(false);
     };
@@ -248,46 +268,74 @@ async fn audit_failure(deps: &Deps<'_>, user_id: Option<&str>, step: &str) -> Re
 /// A rejected factor: the audited step and the generic error returned.
 type Rejected = (&'static str, AppError);
 
+/// Face challenge consumed in the reservation transaction of [`attempt_deferred`].
+struct FaceChallenge<'a> {
+    subject: &'a str,
+    challenge: &'a str,
+}
+
 /// Runs one rate-limited verification. The attempt is counted before `verify`
-/// runs (atomic with the limit check), kept and audited when a factor is
-/// rejected, and released when verification succeeds or cannot run.
-async fn attempt<T>(
+/// runs (atomic with the limit check, and with the face challenge consumption
+/// when given), kept and audited when a factor is rejected, and released when
+/// verification cannot run. On success the caller releases the returned attempt
+/// inside its effect transaction (one write transaction fewer per step).
+async fn attempt_deferred<T>(
     deps: &Deps<'_>,
     keys: &ClientKeys,
     user_id: Option<&str>,
+    face: Option<FaceChallenge<'_>>,
     verify: impl Future<Output = Result<Result<T, Rejected>, AppError>>,
-) -> Result<T, AppError> {
-    let reserved = ratelimit::reserve(deps.db, deps.now, keys).await?;
+) -> Result<(T, ratelimit::Attempt), AppError> {
+    let tx = deps.db.write().await?;
+    ratelimit::check(&tx, deps.now, keys).await?;
+    if let Some(face) = face {
+        consume_face_challenge_in(&tx, deps.now, face.subject, face.challenge).await?;
+    }
+    let reserved = ratelimit::record_failure(&tx, deps.now, keys).await?;
+    tx.commit().await?;
     match verify.await {
+        Ok(Ok(value)) => Ok((value, reserved)),
         Ok(Err((step, error))) => {
             audit_failure(deps, user_id, step).await?;
             Err(error)
         }
-        outcome => {
-            let tx = deps.db.write().await?;
-            ratelimit::release(&tx, reserved).await?;
-            tx.commit().await?;
-            outcome?.map_err(|(_, e)| e)
+        Err(error) => {
+            release_now(deps, reserved).await?;
+            Err(error)
         }
     }
 }
 
+async fn release_now(deps: &Deps<'_>, reserved: ratelimit::Attempt) -> Result<(), AppError> {
+    let tx = deps.db.write().await?;
+    ratelimit::release(&tx, reserved).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Verifies password (optional), face and TOTP for a signed-in account. Failures are
 /// counted per user (never per e-mail/IP, see `ratelimit`). Returns the TOTP step to
-/// record in the effect transaction.
+/// record and the attempt to release in the effect transaction.
 async fn verify_session_factors(
     deps: &Deps<'_>,
     user_id: &str,
     password: Option<&str>,
     proof: &FaceProof<'_>,
     totp_code: &str,
-) -> Result<i64, AppError> {
+) -> Result<(i64, ratelimit::Attempt), AppError> {
     let conn = deps.db.read().await?;
     if credentials(&conn, user_id).await?.totp_reenroll_required {
         return Err(AppError::Conflict(t("auth.error.reenroll_totp").into()));
     }
     let keys = ClientKeys::session(user_id);
-    attempt(deps, &keys, Some(user_id), async {
+    let subject = user_subject(user_id);
+    // Without a password the challenge is consumed with the reservation; with one,
+    // only after the password matched (a wrong password keeps the capture usable).
+    let face = password.is_none().then(|| FaceChallenge {
+        subject: &subject,
+        challenge: proof.challenge,
+    });
+    attempt_deferred(deps, &keys, Some(user_id), face, async {
         if let Some(password) = password {
             let stored: Option<String> = query_opt(
                 &conn,
@@ -300,8 +348,10 @@ async fn verify_session_factors(
             if !crate::infrastructure::password::verify(stored, password).await {
                 return Ok(Err(("password", invalid_credentials())));
             }
-        }
-        if !verify_face(deps, &user_subject(user_id), Some(user_id), proof).await? {
+            if !verify_face(deps, &subject, Some(user_id), proof).await? {
+                return Ok(Err(("face", face_not_confirmed())));
+            }
+        } else if !match_face(deps, Some(user_id), proof).await? {
             return Ok(Err(("face", face_not_confirmed())));
         }
         Ok(check_totp(deps, user_id, totp_code)

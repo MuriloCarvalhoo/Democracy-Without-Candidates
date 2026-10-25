@@ -44,20 +44,31 @@ async fn open_collection(
     Ok(p)
 }
 
-async fn recount(tx: &Connection, ctx: &Ctx<'_>, id: &str) -> Result<u64, AppError> {
-    let count: u64 = query_opt(
-        tx,
-        "SELECT COUNT(*) FROM signatures WHERE proposal_id = ?1 AND active = 1",
-        [id],
-    )
-    .await?
-    .ok_or_else(|| AppError::internal("missing or invalid stored value"))?
-    .get(0)?;
-    tx.execute(
-        "UPDATE proposals SET signature_count = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'collecting_signatures'",
-        (id, count, ts(ctx.now)),
-    )
-    .await?;
+/// Applies one signature change to the stored count (same transaction, after the
+/// row changed) instead of counting every signature under the writer.
+async fn adjust_count(
+    tx: &Connection,
+    ctx: &Ctx<'_>,
+    p: &ProposalRow,
+    added: bool,
+) -> Result<u64, AppError> {
+    let count = if added {
+        p.signature_count + 1
+    } else {
+        p.signature_count
+            .checked_sub(1)
+            .ok_or_else(|| AppError::internal("signature count below zero"))?
+    };
+    let changed = tx
+        .execute(
+            "UPDATE proposals SET signature_count = ?2, updated_at = ?3
+             WHERE id = ?1 AND status = 'collecting_signatures' AND signature_count = ?4",
+            (p.id.as_str(), count, ts(ctx.now), p.signature_count),
+        )
+        .await?;
+    if changed != 1 {
+        return Err(AppError::internal("signature count changed concurrently"));
+    }
     Ok(count)
 }
 
@@ -122,13 +133,19 @@ pub async fn sign(
         .text_hash
         .clone()
         .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
-    tx.execute(
-        "INSERT INTO signatures (proposal_id, user_id, text_hash, active, signed_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)
-         ON CONFLICT(proposal_id, user_id) DO UPDATE SET active = 1, signed_at = excluded.signed_at, updated_at = excluded.updated_at",
-        (id, actor.user_id.as_str(), text_hash, ts(ctx.now)),
-    )
-    .await?;
-    let count = recount(&tx, &ctx, id).await?;
+    let changed = tx
+        .execute(
+            "INSERT INTO signatures (proposal_id, user_id, text_hash, active, signed_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)
+             ON CONFLICT(proposal_id, user_id) DO UPDATE SET active = 1, signed_at = excluded.signed_at, updated_at = excluded.updated_at",
+            (id, actor.user_id.as_str(), text_hash, ts(ctx.now)),
+        )
+        .await?;
+    if changed != 1 {
+        return Err(AppError::Conflict(
+            crate::i18n::t("proposals.error.already_signed").into(),
+        ));
+    }
+    let count = adjust_count(&tx, &ctx, &p, true).await?;
     let target = p
         .signature_target
         .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;
@@ -191,7 +208,7 @@ pub async fn withdraw_signature(
             crate::i18n::t("proposals.error.not_signed").into(),
         ));
     }
-    let count = recount(&tx, &ctx, id).await?;
+    let count = adjust_count(&tx, &ctx, &p, false).await?;
     let target = p
         .signature_target
         .ok_or_else(|| AppError::internal("missing or invalid stored value"))?;

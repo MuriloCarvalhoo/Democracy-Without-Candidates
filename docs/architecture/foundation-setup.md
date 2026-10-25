@@ -81,12 +81,12 @@ CI (`.github/workflows/ci.yml`) usa os mesmos comandos. Erros de configuração,
 
 ## Estado da evidência
 
-Última execução local completa no commit `7f914f2` (merge de todas as features), máquina Linux x86_64 com 28 CPUs e 63 GiB, compartilhada com builds.
+Última execução local completa nos commits `7f914f2` (merge de todas as features) e `7f93dc5` (correções da revisão de segurança: check, test e e2e), máquina Linux x86_64 com 28 CPUs e 63 GiB, compartilhada com builds.
 
 | Verificação | Resultado |
 | --- | --- |
 | `just check` | Passou |
-| `just test` | 147 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos) |
+| `just test` | 159 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos) |
 | `just e2e` | 15 testes em 8 alvos passaram: fundação, identidade, propostas, debate, votação, auditoria, admin e PWA |
 | `just face-test` | 57 testes passaram |
 | `just load 20 30s` | 56.319 requisições, 0 falhas; 20/20 votos confirmados = 20 cédulas no banco, sem duplicatas; `integrity_check` ok; p95 ≤ 5 ms. Experimento local, não capacidade |

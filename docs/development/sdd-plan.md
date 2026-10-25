@@ -173,6 +173,7 @@ Implementado em 2026-10-24/25 por fatias paralelas, integradas e verificadas jun
 5. **Votação:** votos públicos devem ser listados nominalmente após o encerramento? A contagem de participação na auditoria durante a votação é aceitável? Iniciar plebiscito deve exigir reautenticação?
 6. **Auditoria:** como gerar checkpoints sem parar o serviço (tarefa periódica, painel ou CLI)? Acesso de auditor deve ser público e anônimo? A chave de assinatura deve ficar fora da VPS? Interface em UTC ou America/Sao_Paulo?
 7. **Operação:** camada horária de backup para o RPO de 1 h (ex.: 24 horários)? Credenciar auditor deve exigir reautenticação? Caddy ou nginx?
+8. **Revisão de segurança (2026-10-25), itens não corrigidos:** meta-leis sem quota e rascunhos sem teto permitem publicar snapshots grandes repetidamente — definir quota ou limite de meta-leis ativas por autor? O passo de rosto da recuperação de senha responde mais rápido para e-mail inexistente (enumeração por tempo com motor real) — aceitar ou igualar o custo? Cadastro, busca de CEP e início de recuperação não têm limite por IP/e-mail — definir limites? Ações de admin (flags, auditores, moderação, plebiscito, arquivamento) devem exigir rosto + TOTP?
 
 ### Bloqueios que permanecem
 

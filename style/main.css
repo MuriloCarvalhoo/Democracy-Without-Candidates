@@ -325,6 +325,22 @@ nav.row a {
 nav.row a:hover { border-color: var(--pen); }
 nav.row a[aria-current="page"] { background: var(--pen); border-color: var(--pen); color: var(--on-pen); }
 nav.row > span { color: var(--ink-2); font-size: var(--fs-sm); }
+@media (max-width: 39.99rem) {
+  /* Phones: one scrollable line of pills instead of ragged wrapped rows. */
+  nav.row {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter);
+  }
+  nav.row::-webkit-scrollbar { display: none; }
+  nav.row > * { flex: none; }
+  nav.row > :last-child { margin-right: var(--gutter); }
+}
+/* Item + action rows (e.g. attached policies with "detach"). */
+.list > li.row { justify-content: space-between; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--line); }
+/* Token chips (e.g. effective permissions). */
+.list.row { gap: var(--sp-2); }
+.list.row code { display: inline-block; padding: .1rem .5rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.nowrap { white-space: nowrap; }
 /* Standalone links in action rows get a full tap target. */
 .row > a:not(.button), .row > span > a { display: inline-flex; align-items: center; min-height: var(--tap); }
 
@@ -418,6 +434,7 @@ form { display: grid; gap: var(--sp-4); max-width: 40rem; }
 form:has(.filters), form.row { max-width: none; }
 form.row { align-items: flex-end; }
 form.row > label { flex: 1 1 14rem; }
+form + form { margin-top: var(--sp-4); }
 .page.narrow form + p { margin-top: var(--sp-4); }
 .page.narrow form { max-width: none; }
 label { display: grid; gap: var(--sp-1); font-weight: 600; }
@@ -430,6 +447,14 @@ input, textarea, select {
   border-radius: var(--r-md);
 }
 textarea { min-height: 8rem; resize: vertical; line-height: 1.5; }
+/* Code documents (IAM policy JSON): monospace editor and read-only block. */
+textarea.code, pre.code { font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.55; tab-size: 2; }
+textarea.code { min-height: 18rem; }
+pre.code {
+  margin: var(--sp-3) 0; padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+form:has(textarea.code) { max-width: 48rem; }
 select {
   -webkit-appearance: none; appearance: none; padding-right: 2.25rem;
   background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
@@ -519,6 +544,7 @@ thead th { font-size: var(--fs-sm); color: var(--ink-2); font-weight: 700; backg
 tbody th { font-weight: 600; }
 tbody tr:last-child > * { border-bottom: 0; }
 td code { font-size: .8rem; }
+.table-scroll td.wide { min-width: 16rem; }
 tr[data-changed="true"] { background: var(--warn-tint); }
 .page > table, .card > table, .detail-main > table, details > table { border: 1px solid var(--line); border-radius: var(--r-md); }
 .page > table { max-width: 48rem; }
@@ -547,6 +573,7 @@ dd { margin: 0 0 var(--sp-1); overflow-wrap: anywhere; }
 .detail-layout { display: grid; gap: var(--sp-5); }
 .detail-main > h2:first-child { margin-top: 0; }
 .detail-side > :first-child { margin-top: 0; }
+.detail-side:empty { display: none; }
 .deadlines { list-style: none; padding: 0; margin: var(--sp-3) 0 var(--sp-1); display: grid; gap: var(--sp-1); }
 .deadlines li { padding-left: var(--sp-4); position: relative; }
 .deadlines li::before { content: ""; position: absolute; left: 0; top: .55em; width: .5rem; height: .5rem; border-radius: 50%; background: var(--pen); }

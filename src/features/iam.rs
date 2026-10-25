@@ -435,8 +435,8 @@ fn PolicyTable(policies: Vec<PolicySummary>) -> impl IntoView {
                         let badge = managed_badge(p.managed);
                         view! {
                             <tr data-testid=testid>
-                                <td><A href=format!("/admin/iam/politicas/{}", p.id)>{p.name}</A>" "{badge}</td>
-                                <td>{p.description}</td>
+                                <td class="nowrap"><A href=format!("/admin/iam/politicas/{}", p.id)>{p.name}</A>" "{badge}</td>
+                                <td class="wide">{p.description}</td>
                                 <td>{p.attachments}</td>
                                 <td>{p.version}</td>
                             </tr>
@@ -714,8 +714,8 @@ pub fn IamGroupPage() -> impl IntoView {
 #[component]
 pub fn IamUsersPage() -> impl IntoView {
     let query_map = use_query_map();
-    let query = RwSignal::new(String::new());
     let searched = Memo::new(move |_| query_map.read().get("q").unwrap_or_default());
+    let query = RwSignal::new(searched.get_untracked());
     let results = Resource::new(
         move || searched.get(),
         |q| async move {
@@ -847,7 +847,7 @@ fn UserDetail(v: UserView, changes: Changes) -> impl IntoView {
             }}
             <h3>{t("iam.user.effective")}</h3>
             <p class="hint">{t("iam.user.effective_hint")}</p>
-            <ul class="list" data-testid="iam-effective">
+            <ul class="list row" data-testid="iam-effective">
                 {v.allowed.into_iter().map(|a| view! { <li><code>{a}</code></li> }).collect_view()}
             </ul>
         </section>
@@ -884,10 +884,10 @@ pub fn IamSimulatorPage() -> impl IntoView {
 
 #[component]
 fn SimulationResult(s: Simulation) -> impl IntoView {
-    let verdict = if s.decision.allowed {
-        t("iam.sim.allowed")
+    let (verdict, stamp) = if s.decision.allowed {
+        (t("iam.sim.allowed"), "badge status-approved")
     } else {
-        t("iam.sim.denied")
+        (t("iam.sim.denied"), "badge status-rejected")
     };
     let reason = match (s.decision.effect, s.decision.policy) {
         (None, _) | (_, None) => t("iam.sim.implicit").to_owned(),
@@ -904,7 +904,7 @@ fn SimulationResult(s: Simulation) -> impl IntoView {
         <dl class="facts" data-testid="iam-sim-result">
             <dt>{t("iam.sim.email")}</dt><dd>{s.user.email}" ("{s.user.status}")"</dd>
             <dt>{t("iam.sim.request")}</dt><dd><code>{s.action}</code>" @ "<code>{s.resource}</code></dd>
-            <dt>{t("iam.sim.decision")}</dt><dd data-testid="iam-sim-verdict">{verdict}</dd>
+            <dt>{t("iam.sim.decision")}</dt><dd><span class=stamp data-testid="iam-sim-verdict">{verdict}</span></dd>
             <dt>{t("iam.sim.reason")}</dt><dd data-testid="iam-sim-reason">{reason}</dd>
         </dl>
     }

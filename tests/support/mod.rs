@@ -331,7 +331,30 @@ impl Browser {
             .unwrap_or_default()
     }
 
+    /// Console entries meaning the WebAssembly app stopped (panic, hydration
+    /// failure, trap). Drains the console like `console`.
+    pub async fn crashes(&self) -> Vec<String> {
+        self.console()
+            .await
+            .into_iter()
+            .filter(|l| {
+                l.contains("panicked")
+                    || l.contains("hydration error")
+                    || l.contains("RuntimeError")
+            })
+            .collect()
+    }
+
+    /// Ends the session; fails the test if the app panicked since the last
+    /// console read (a browser panic stops the whole app).
     pub async fn close(self) {
+        let crashes = self.crashes().await;
+        self.close_allowing_crash().await;
+        assert!(crashes.is_empty(), "browser app crashed: {crashes:#?}");
+    }
+
+    /// For tests that trigger a panic on purpose.
+    pub async fn close_allowing_crash(self) {
         let _ = self.client.close().await;
         let mut driver = self.driver;
         let _ = driver.kill();

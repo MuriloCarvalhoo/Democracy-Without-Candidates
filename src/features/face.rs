@@ -97,14 +97,16 @@ pub fn FaceCapture(
         busy.set(true);
         error.set(None);
         spawn_local(async move {
-            match face_challenge(flow.to_owned()).await {
+            let result = face_challenge(flow.to_owned()).await;
+            // Before `on_capture`: it may change the parent step and dispose this widget.
+            busy.set(false);
+            match result {
                 Ok(challenge) => on_capture.run(FaceCaptured {
                     challenge,
                     image_b64,
                 }),
                 Err(e) => error.set(Some(e)),
             }
-            busy.set(false);
         });
     };
 

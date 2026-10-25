@@ -87,22 +87,6 @@ async fn sessions(path: &Path, emails: &[&str]) -> (Vec<String>, Vec<String>) {
     (tokens, ids)
 }
 
-/// Console entries that mean the WebAssembly app stopped (panic, hydration
-/// failure, trap). Server errors shown in the page are not crashes.
-async fn crashes(browser: &Browser) -> Vec<String> {
-    browser
-        .console()
-        .await
-        .into_iter()
-        .filter(|l| {
-            l.contains("panicked")
-                || l.contains("hydration error")
-                || l.contains("RuntimeError")
-                || l.contains("Uncaught")
-        })
-        .collect()
-}
-
 async fn set_session(browser: &Browser, app: &App, token: Option<&String>) {
     browser.client.goto(&app.url("/healthz")).await.unwrap();
     browser.client.delete_all_cookies().await.unwrap();
@@ -193,7 +177,7 @@ async fn every_route_hydrates_and_keeps_working_for_each_role() {
                 }
                 let path = route.replace("{id}", id);
                 browser.goto_hydrated(&app.url(&path)).await;
-                for line in crashes(&browser).await {
+                for line in browser.crashes().await {
                     problems.push(format!("{role} load {path}: {line}"));
                 }
                 if !client_navigation_alive(&browser, &path).await {
@@ -221,7 +205,7 @@ async fn every_route_hydrates_and_keeps_working_for_each_role() {
                     link.click().await.unwrap();
                 }
                 tokio::time::sleep(Duration::from_millis(300)).await;
-                for line in crashes(&browser).await {
+                for line in browser.crashes().await {
                     problems.push(format!("{role} nav#{round} {href}: {line}"));
                 }
             }
@@ -292,7 +276,7 @@ async fn face_step_to_totp_step_never_panics() {
             .await
             .expect("TOTP step");
         tokio::time::sleep(Duration::from_millis(300)).await;
-        for line in crashes(&browser).await {
+        for line in browser.crashes().await {
             problems.push(format!("round {round}: {line}"));
         }
     }
@@ -359,7 +343,7 @@ async fn browser_panic_is_visible_logged_on_server_and_navigation_recovers() {
         "fresh page has no crash notice"
     );
     assert!(client_navigation_alive(&browser, "/propostas").await);
-    browser.close().await;
+    browser.close_allowing_crash().await;
 
     let start = std::time::Instant::now();
     let text = loop {

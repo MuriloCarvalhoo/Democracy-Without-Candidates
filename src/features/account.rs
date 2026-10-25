@@ -133,7 +133,7 @@ pub fn ChangePasswordPage() -> impl IntoView {
         <section class="page narrow">
             <h1>{t("account.password.title")}</h1>
             <p>{t("account.password.hint")}</p>
-            <form on:submit=submit>
+            <form method="post" on:submit=submit>
                 <label>{t("auth.field.current_password")}
                     <input type="password" autocomplete="current-password" bind:value=current/>
                 </label>
@@ -183,7 +183,7 @@ pub fn RecoveryCodesPage() -> impl IntoView {
                 <p><a href="/perfil">{t("nav.profile")}</a></p>
             }>
                 <p>{t("account.codes.hint")}</p>
-                <form on:submit=submit>
+                <form method="post" on:submit=submit>
                     <label>{t("auth.field.password")}
                         <input type="password" autocomplete="current-password" bind:value=password/>
                     </label>

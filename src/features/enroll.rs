@@ -214,7 +214,7 @@ fn TotpStep(on_done: Callback<Option<Vec<String>>>) -> impl IntoView {
                 Err(error) => view! { <ErrorNotice error/> }.into_any(),
             })}
         </Suspense>
-        <form on:submit=submit>
+        <form method="post" on:submit=submit>
             <label>{t("auth.field.totp")}
                 <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-testid="totp-code" bind:value=code/>
             </label>

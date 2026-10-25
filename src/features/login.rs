@@ -272,7 +272,7 @@ pub fn LoginPage() -> impl IntoView {
             <h1>{t("auth.login.title")}</h1>
             {move || match step.get() {
                 LoginStep::Credentials => view! {
-                    <form on:submit=submit_credentials>
+                    <form method="post" on:submit=submit_credentials>
                         <label>{t("auth.field.email")}
                             <input type="email" name="email" autocomplete="username" required=true data-testid="login-email" bind:value=email/>
                         </label>
@@ -289,7 +289,7 @@ pub fn LoginPage() -> impl IntoView {
                 }.into_any(),
                 _ => view! {
                     <h2>{move || if recovery.get() { t("auth.login.recovery") } else { t("auth.login.totp") }}</h2>
-                    <form on:submit=submit_code>
+                    <form method="post" on:submit=submit_code>
                         <label>{move || if recovery.get() { t("auth.field.recovery_code") } else { t("auth.field.totp") }}
                             <input type="text" autocomplete="one-time-code" data-testid="login-code" bind:value=code/>
                         </label>
@@ -364,7 +364,7 @@ pub fn ResetPasswordPage() -> impl IntoView {
                 {move || match step.get() {
                     LoginStep::Credentials => view! {
                         <p>{t("auth.reset.hint")}</p>
-                        <form on:submit=begin>
+                        <form method="post" on:submit=begin>
                             <label>{t("auth.field.email")}
                                 <input type="email" autocomplete="username" required=true data-testid="reset-email" bind:value=email/>
                             </label>
@@ -376,7 +376,7 @@ pub fn ResetPasswordPage() -> impl IntoView {
                         <FaceCapture flow="auth" on_capture=on_face disabled=busy/>
                     }.into_any(),
                     _ => view! {
-                        <form on:submit=finish>
+                        <form method="post" on:submit=finish>
                             <label>{t("auth.field.totp")}
                                 <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-testid="reset-code" bind:value=code/>
                             </label>

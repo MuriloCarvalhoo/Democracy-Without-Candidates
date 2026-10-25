@@ -46,8 +46,8 @@ Erros de migration, banco indisponível, porta ocupada, timeout de readiness e f
 | `just dev` | `cargo leptos watch` com `data/dev.db` persistente, migrations sem reset, loopback 127.0.0.1:3000 |
 | `just dev-seed` | Fixtures sintéticas (flags, contas, setup, propostas, debate, votação); recusado em produção |
 | `just check` | `cargo fmt --check`, clippy SSR (`--all-targets`) e clippy WASM com `-D warnings` |
-| `just test` | Testes Rust com TursoDB real em bancos descartáveis |
-| `just e2e` | Build cargo-leptos, cópia do binário para `target/e2e/`, app isolado em porta livre, chromedriver/Chrome headless, esperas limitadas; roda todos os alvos `e2e*` |
+| `just test` | 212 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos); suíte unitária repetida 4× sem instabilidade |
+| `just e2e` | 27 testes em 13 alvos passaram: fundação, identidade (inclui `DWC_DEV_SKIP_TOTP`), propostas, debate, votação, auditoria, admin, IAM, PWA, layout, resiliência a pânico, status HTTP e homologação; todo teste falha se o app WebAssembly entrar em pânico |
 | `just face-setup` / `just face-test` | venv do motor facial e pytest com motor fake determinístico |
 | `just load USERS DURATION` | Release isolado + Goose; relatório em `artifacts/load/`; falha com >1% de falhas inesperadas, p95 acima dos limites ou invariantes violados |
 | `just backup-test` | Snapshot online (SIGUSR1) e offline, restauração isolada, integridade, retenção e rejeição de arquivo adulterado |
@@ -86,10 +86,10 @@ CI (`.github/workflows/ci.yml`) usa os mesmos comandos. Erros de configuração,
 | Verificação | Resultado |
 | --- | --- |
 | `just check` | Passou |
-| `just test` | 162 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos) |
-| `just e2e` | 16 testes em 8 alvos passaram: fundação, identidade (inclui `DWC_DEV_SKIP_TOTP`), propostas, debate, votação, auditoria, admin e PWA |
-| `just face-test` | 57 testes passaram |
-| `just load 20 30s` | 56.319 requisições, 0 falhas; 20/20 votos confirmados = 20 cédulas no banco, sem duplicatas; `integrity_check` ok; p95 ≤ 5 ms. Experimento local, não capacidade |
+| `just test` | 212 testes passaram, 0 falhas, 2 ignorados (contrato com serviço facial em execução; desempenho com 100 mil eventos); suíte unitária repetida 4× sem instabilidade |
+| `just e2e` | 27 testes em 13 alvos passaram: fundação, identidade (inclui `DWC_DEV_SKIP_TOTP`), propostas, debate, votação, auditoria, admin, IAM, PWA, layout, resiliência a pânico, status HTTP/formulários e homologação; todo teste falha se o app WebAssembly entrar em pânico |
+| `just face-test` | 64 testes passaram |
+| `just load 20 30s` | 243.114 requisições, 0 falhas (7.842 req/s); 20/20 votos = 20 cédulas, sem duplicatas, `counter_mismatch` 0; `integrity_check` ok; p99 ≤ 4 ms. Experimento local na mesma máquina, não capacidade |
 | `just backup-test` | Passou: snapshot online durante escritas e offline restaurados, cadeia de auditoria válida |
 
 Persistência após restart é coberta por testes Rust (sessões, prazos, encerramento de votação) e pelo E2E da fundação. Artefatos de carga ficam em `artifacts/load/<timestamp>/`, ignorados pelo Git.

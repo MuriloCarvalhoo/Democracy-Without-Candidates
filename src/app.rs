@@ -69,6 +69,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Link rel="manifest" href="/manifest.webmanifest"/>
+        <Link rel="icon" href="/icon.svg" type_="image/svg+xml"/>
         <Meta name="theme-color" content="#2238b0"/>
         <Title text=t("app.name")/>
         <Router>

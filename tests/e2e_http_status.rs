@@ -83,4 +83,51 @@ async fn errors_map_to_http_status_for_server_fns_and_pages() {
         assert_eq!(status, expected, "GET {path} as {who:?}");
         assert!(body.contains("</html>"), "GET {path}: full document");
     }
+    // Declared icon: browsers stop probing the missing /favicon.ico.
+    assert!(page("/propostas", "").1.contains(r#"rel="icon""#));
+}
+
+/// Credential forms must POST when the WebAssembly app is not running (slow
+/// network, blocked script, crash): a native GET would put the e-mail and the
+/// password in the URL, the browser history and proxy logs.
+#[tokio::test]
+#[ignore = "requires built app; run with `just e2e`"]
+async fn credential_forms_never_fall_back_to_get() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("e2e.db");
+    seed_dev(&db_path);
+    let citizen = {
+        let db = Db::open(&db_path).await.unwrap();
+        account_with_session(&db, "cidada@example.test", "pol-cidadao")
+            .await
+            .1
+    };
+    let app = App::start(&db_path, &[]);
+    let cookie = format!("dwc_session={citizen}");
+    for (path, who) in [
+        ("/login", ""),
+        ("/cadastro", ""),
+        ("/recuperar-senha", ""),
+        ("/alterar-senha", cookie.as_str()),
+        ("/perfil/codigos", cookie.as_str()),
+    ] {
+        let headers: Vec<(&str, &str)> = (!who.is_empty())
+            .then_some(("Cookie", who))
+            .into_iter()
+            .collect();
+        let (status, body) = http_get_with(app.port, path, &headers);
+        assert_eq!(status, 200, "GET {path}");
+        let forms: Vec<&str> = body
+            .split("<form")
+            .skip(1)
+            .map(|f| f.split('>').next().unwrap_or(""))
+            .collect();
+        assert!(!forms.is_empty(), "GET {path}: no form rendered");
+        for form in forms {
+            assert!(
+                form.contains(r#"method="post""#),
+                "GET {path}: <form{form}> may submit as GET"
+            );
+        }
+    }
 }

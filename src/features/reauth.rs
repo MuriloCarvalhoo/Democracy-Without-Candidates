@@ -77,7 +77,7 @@ pub fn ReauthPanel(action: String, resource: String, on_granted: Callback<()>) -
         <section class="card reauth" aria-labelledby="reauth-title">
             <h2 id="reauth-title">{t("reauth.title")}</h2>
             <p>{t("reauth.hint")}</p>
-            <form on:submit=submit>
+            <form method="post" on:submit=submit>
                 <FaceAndTotp face code/>
                 <button type="submit" data-testid="reauth-submit" disabled=move || busy.get()>{t("reauth.submit")}</button>
                 {error_view(error)}

@@ -17,6 +17,8 @@ O checkout contém a aplicação Rust, o motor facial Python, testes, ferramenta
 | [Banco](database-structure.md) | Modelo conceitual e invariantes de persistência |
 | [Identidade e autorização](auth-rbac-flow.md) | Sessão, permissões e critérios AUTH |
 | [Wireframes](../wireframes/wireframes.md) | Fluxos e estados de tela |
+| [Rust: memória e velocidade](../rust-praticas-da-documentacao.md) | Práticas oficiais de Rust aplicadas ao código |
+| [Boas práticas](../boas-praticas/) | [Turso](../boas-praticas/turso.md), [Leptos](../boas-praticas/leptos.md), [Axum](../boas-praticas/axum.md) e [async/Tokio](../boas-praticas/rust-async.md) para alto volume, com a situação deste repositório |
 | [AGENTS.md](../../AGENTS.md) | Instruções para trabalho no repositório |
 | [Operação](../../ops/README.md) | Implantação, backup e restauração |
 | [Motor facial](../../face-service/README.md) | Serviço Python privado e seus limites |

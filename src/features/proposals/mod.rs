@@ -17,13 +17,13 @@ use leptos_router::{
 use crate::{
     domain::proposals::{
         Level, ProposalKind, ProposalStatus,
-        view::{ProposalPage as Page, ProposalSummary},
+        view::{Place, ProposalPage as Page, ProposalSummary},
     },
     domain::setup::SetupParams,
     features::ui::{Empty, ErrorNotice, Loading},
     i18n::t,
 };
-use api::{dashboard_data, list_proposals, setup_history};
+use api::{dashboard_data, list_proposals, list_territories, setup_history};
 
 /// Random client key for idempotent actions (one per user attempt).
 pub(crate) fn new_idempotency_key() -> Option<String> {
@@ -134,6 +134,16 @@ fn select_options<T: Copy + Send + Sync + 'static>(
     }
 }
 
+fn place_options(places: Vec<Place>, current: Option<String>) -> impl IntoView {
+    view! {
+        <option value="" selected=current.is_none()>{t("proposals.filter.any")}</option>
+        {places.into_iter().map(|p| {
+            let selected = current.as_deref() == Some(p.code.as_str());
+            view! { <option value=p.code selected=selected>{p.name}</option> }
+        }).collect_view()}
+    }
+}
+
 fn page_href(q: &[(&str, Option<String>)], page: u32) -> String {
     let mut parts: Vec<String> = q
         .iter()
@@ -147,22 +157,32 @@ fn page_href(q: &[(&str, Option<String>)], page: u32) -> String {
     format!("/propostas?{}", parts.join("&"))
 }
 
-/// `/propostas`: public list with type/status/level filters and server pagination.
+/// `/propostas`: public list with type/status/level/state/city filters and
+/// server pagination. Anyone may filter; signing and voting stay restricted
+/// to the eligible electorate by their own use cases.
 #[component]
 pub fn ProposalsPage() -> impl IntoView {
     let query = use_query_map();
     let get = move |k: &str| query.read().get(k).filter(|v| !v.is_empty());
-    let params = move || {
-        (
-            get("kind"),
-            get("status"),
-            get("level"),
-            get("page").and_then(|p| p.parse::<u32>().ok()),
-        )
+    let params = move || Filters {
+        kind: get("kind"),
+        status: get("status"),
+        level: get("level"),
+        state: get("state"),
+        city: get("city"),
+        page: get("page").and_then(|p| p.parse::<u32>().ok()),
     };
-    let data = Resource::new(params, |(kind, status, level, page)| {
-        list_proposals(kind, status, level, page)
+    let data = Resource::new(params, |f| {
+        list_proposals(f.kind, f.status, f.level, f.state, f.city, f.page)
     });
+    // State picked in the form before applying it; the URL wins after navigation.
+    let picked = RwSignal::new(None::<Option<String>>);
+    Effect::new(move |_| {
+        query.track();
+        picked.set(None);
+    });
+    let state = move || picked.get().unwrap_or_else(|| get("state"));
+    let places = Resource::new(state, list_territories);
     let statuses: &'static [ProposalStatus] = &ProposalStatus::ALL[1..];
 
     view! {
@@ -188,6 +208,31 @@ pub fn ProposalsPage() -> impl IntoView {
                             {move || select_options(Level::ALL, Level::as_db, Level::label_key, get("level"))}
                         </select>
                     </label>
+                    <Transition fallback=|| ()>
+                        {move || places.get().and_then(|r| r.ok()).map(|o| {
+                            let same_state = state() == get("state");
+                            let no_state = state().is_none();
+                            view! {
+                                <label>{t("proposals.field.country")}
+                                    <select name="country" data-testid="filter-country">
+                                        <option value=o.country.code selected>{o.country.name}</option>
+                                    </select>
+                                </label>
+                                <label>{t("proposals.field.state")}
+                                    <select name="state" data-testid="filter-state"
+                                        on:change=move |ev| picked.set(Some(Some(event_target_value(&ev)).filter(|v| !v.is_empty())))>
+                                        {place_options(o.states, state())}
+                                    </select>
+                                </label>
+                                <label>{t("proposals.field.city")}
+                                    <select name="city" data-testid="filter-city" disabled=no_state
+                                        title=no_state.then(|| t("proposals.filter.pick_state"))>
+                                        {place_options(o.cities, get("city").filter(|_| same_state))}
+                                    </select>
+                                </label>
+                            }
+                        })}
+                    </Transition>
                 </div>
                 <div class="row">
                     <button type="submit" data-testid="filter-apply">{t("proposals.filter.apply")}</button>
@@ -204,12 +249,25 @@ pub fn ProposalsPage() -> impl IntoView {
     }
 }
 
-fn list_view(
-    page: Page,
-    (kind, status, level, _): (Option<String>, Option<String>, Option<String>, Option<u32>),
-) -> impl IntoView {
-    let filtered = kind.is_some() || status.is_some() || level.is_some();
-    let q = [("kind", kind), ("status", status), ("level", level)];
+#[derive(Clone, PartialEq)]
+struct Filters {
+    kind: Option<String>,
+    status: Option<String>,
+    level: Option<String>,
+    state: Option<String>,
+    city: Option<String>,
+    page: Option<u32>,
+}
+
+fn list_view(page: Page, f: Filters) -> impl IntoView {
+    let q = [
+        ("kind", f.kind),
+        ("status", f.status),
+        ("level", f.level),
+        ("state", f.state),
+        ("city", f.city),
+    ];
+    let filtered = q.iter().any(|(_, v)| v.is_some());
     let (prev, next) = (page.page > 1, page.page < page.pages);
     let empty = if filtered {
         "proposals.list.no_match"

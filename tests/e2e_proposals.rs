@@ -169,6 +169,82 @@ async fn visitor_lists_filters_and_reads_seeded_proposals() {
 /// the electorate gets the eligibility notice and no actions container.
 #[tokio::test]
 #[ignore = "requires built app and chromedriver; run with `just e2e`"]
+async fn visitor_filters_by_state_and_city() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("e2e.db");
+    seed_dev(&db);
+    let app = App::start(&db, &[]);
+    let browser = Browser::start().await;
+    let items = async || {
+        let mut out = Vec::new();
+        for el in browser
+            .client
+            .find_all(Locator::Css("[data-testid=proposal-item]"))
+            .await
+            .unwrap()
+        {
+            out.push(el.text().await.unwrap());
+        }
+        out
+    };
+
+    browser.goto_hydrated(&app.url("/propostas")).await;
+    let select = async |css: &str, value: &str| {
+        browser
+            .client
+            .find(Locator::Css(css))
+            .await
+            .unwrap()
+            .select_by_value(value)
+            .await
+            .unwrap();
+    };
+    assert!(
+        browser
+            .text_of("[data-testid=filter-country]")
+            .await
+            .contains("Brasil")
+    );
+    // City options load after the state is picked (no navigation needed).
+    select("[data-testid=filter-state]", "42").await;
+    browser
+        .wait_text("[data-testid=filter-city]", |t| t.contains("Blumenau"))
+        .await;
+    select("[data-testid=filter-city]", "4202404").await;
+    browser
+        .client
+        .find(Locator::Css("[data-testid=filter-apply]"))
+        .await
+        .unwrap()
+        .click()
+        .await
+        .unwrap();
+    browser
+        .wait_text("[data-testid=proposal-total]", |t| !t.starts_with("7 "))
+        .await;
+    let url = browser.client.current_url().await.unwrap();
+    assert!(
+        url.query()
+            .is_some_and(|q| q.contains("state=42") && q.contains("city=4202404"))
+    );
+    let city = items().await;
+    assert!(!city.is_empty() && city.iter().all(|t| t.contains("Blumenau")));
+
+    // State from the URL (SSR): state laws and its cities, never national ones.
+    browser.goto_hydrated(&app.url("/propostas?state=42")).await;
+    let state = items().await;
+    assert!(state.len() > city.len(), "{state:#?}");
+    assert!(state.iter().all(|t| !t.contains("Nacional")), "{state:#?}");
+    browser.goto_hydrated(&app.url("/propostas?state=35")).await;
+    browser
+        .wait_text("[data-testid=proposal-total]", |t| t.starts_with("0 "))
+        .await;
+    assert!(browser.console_errors().await.is_empty());
+    browser.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires built app and chromedriver; run with `just e2e`"]
 async fn viewer_without_actions_sees_no_empty_action_card() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("e2e.db");

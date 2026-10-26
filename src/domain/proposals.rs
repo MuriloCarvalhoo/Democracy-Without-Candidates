@@ -273,6 +273,21 @@ pub mod view {
         pub deadline: Option<String>,
     }
 
+    /// Jurisdiction offered by the territorial listing filter (IBGE code + name).
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Place {
+        pub code: String,
+        pub name: String,
+    }
+
+    /// Deployment country, its states and the cities of the chosen state.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct TerritoryOptions {
+        pub country: Place,
+        pub states: Vec<Place>,
+        pub cities: Vec<Place>,
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct ProposalPage {
         pub items: Vec<ProposalSummary>,

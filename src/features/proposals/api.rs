@@ -8,7 +8,7 @@ use crate::{
     domain::{
         proposals::view::{
             Dashboard, Draft, DraftInput, DraftSaved, ProposalDetail, ProposalPage, Published,
-            SetupVersionView, SignatureState, Signers,
+            SetupVersionView, SignatureState, Signers, TerritoryOptions,
         },
         setup::SetupParams,
     },
@@ -51,20 +51,40 @@ pub(crate) mod srv {
 }
 
 #[server(endpoint = "proposals/list")]
-#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(kind = ?kind, status = ?status, level = ?level, page = ?page), err(level = "debug")))]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(kind = ?kind, status = ?status, level = ?level, state = ?state, city = ?city, page = ?page), err(level = "debug")))]
 pub async fn list_proposals(
     kind: Option<String>,
     status: Option<String>,
     level: Option<String>,
+    state: Option<String>,
+    city: Option<String>,
     page: Option<u32>,
 ) -> Result<ProposalPage, AppError> {
     use crate::{application::proposals, server::context};
     context::require_public_read(true, crate::domain::iam::Permission::ProposalRead).await?;
-    let state = context::state()?;
+    let app = context::state()?;
     let filter =
-        proposals::ListFilter::parse(kind.as_deref(), status.as_deref(), level.as_deref(), page)?;
-    srv::advance(&state).await?;
-    proposals::list(&*state.db.read().await?, state.tz(), &filter).await
+        proposals::ListFilter::parse(kind.as_deref(), status.as_deref(), level.as_deref(), page)?
+            .with_territory(state.as_deref(), city.as_deref())?;
+    srv::advance(&app).await?;
+    proposals::list(&*app.db.read().await?, app.tz(), &filter).await
+}
+
+/// Public territorial filter options (anyone may filter; eligibility to sign or
+/// vote is checked by those use cases).
+#[server(endpoint = "proposals/territories")]
+#[cfg_attr(feature = "ssr", tracing::instrument(level = "debug", skip_all, fields(state = ?state), err(level = "debug")))]
+pub async fn list_territories(state: Option<String>) -> Result<TerritoryOptions, AppError> {
+    use crate::{application::proposals, server::context};
+    context::require_public_read(false, crate::domain::iam::Permission::ProposalRead).await?;
+    if state.as_ref().is_some_and(|s| s.len() > 16) {
+        return Err(AppError::validation(
+            "state",
+            crate::i18n::t("proposals.error.filter"),
+        ));
+    }
+    let app = context::state()?;
+    proposals::territory_options(&*app.db.read().await?, state.as_deref()).await
 }
 
 #[server]

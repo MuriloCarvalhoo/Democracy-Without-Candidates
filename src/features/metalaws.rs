@@ -28,7 +28,7 @@ pub fn MetaLawsPage() -> impl IntoView {
     let query = use_query_map();
     let page = move || query.read().get("page").and_then(|p| p.parse::<u32>().ok());
     let data = Resource::new(page, |page| {
-        list_proposals(Some("setup_change".into()), None, None, page)
+        list_proposals(Some("setup_change".into()), None, None, None, None, page)
     });
     view! {
         <section class="page">

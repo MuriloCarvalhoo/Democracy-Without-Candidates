@@ -1061,6 +1061,85 @@ async fn listing_filters_paginates_and_warns_duplicates() {
 }
 
 #[tokio::test]
+async fn listing_filters_by_state_and_city() {
+    let w = world().await;
+    let now = at("2026-10-24T12:00:00Z");
+    w.adopt(now, &SUGGESTED).await;
+    let sc = w.citizen(now, "4202404").await;
+    let sp = w.citizen(now, "3550308").await;
+    w.publish(now, &sc, ProposalKind::NormalLaw, "Lei de Blumenau")
+        .await;
+    w.publish(now, &sp, ProposalKind::NormalLaw, "Lei paulistana")
+        .await;
+    let conn = w.t.db.read().await.unwrap();
+    let titles = async |state: Option<&str>, city: Option<&str>| {
+        let filter = ListFilter::default().with_territory(state, city).unwrap();
+        proposals::list(&conn, Sao_Paulo, &filter)
+            .await
+            .map(|p| p.items.into_iter().map(|i| i.title).collect::<Vec<_>>())
+    };
+    assert_eq!(titles(None, None).await.unwrap().len(), 2);
+    assert_eq!(titles(Some("42"), None).await.unwrap(), ["Lei de Blumenau"]);
+    assert_eq!(titles(Some("35"), None).await.unwrap(), ["Lei paulistana"]);
+    assert_eq!(
+        titles(None, Some("3550308")).await.unwrap(),
+        ["Lei paulistana"]
+    );
+    assert_eq!(
+        titles(Some("42"), Some("4205407")).await.unwrap(),
+        Vec::<String>::new(),
+        "Florianópolis has no proposals"
+    );
+    assert_eq!(
+        titles(Some("42"), Some("3550308")).await.unwrap(),
+        ["Lei de Blumenau"],
+        "a city outside the chosen state falls back to the state"
+    );
+    assert!(titles(Some("4202404"), None).await.is_err(), "not a state");
+    assert!(titles(None, Some("42")).await.is_err(), "not a city");
+    assert!(titles(Some("99"), None).await.is_err(), "unknown state");
+    assert!(
+        ListFilter::default()
+            .with_territory(Some("42' OR 1"), None)
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn territory_options_list_states_and_cities_of_a_state() {
+    let w = world().await;
+    let conn = w.t.db.read().await.unwrap();
+    let none = proposals::territory_options(&conn, None).await.unwrap();
+    assert_eq!(none.country.code, "BR");
+    assert_eq!(
+        none.states
+            .iter()
+            .map(|s| s.code.as_str())
+            .collect::<Vec<_>>(),
+        ["42", "35"],
+        "sorted by name: Santa Catarina, São Paulo"
+    );
+    assert!(none.cities.is_empty());
+    let sc = proposals::territory_options(&conn, Some("42"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sc.cities
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Blumenau", "Florianópolis"]
+    );
+    assert!(
+        proposals::territory_options(&conn, Some("99"))
+            .await
+            .unwrap()
+            .cities
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn proposal_author_name_respects_profile_visibility() {
     let w = world().await;
     let now = at("2026-10-24T12:00:00Z");

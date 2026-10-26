@@ -21,8 +21,9 @@ use crate::{
             BODY_MAX, Level, ProposalKind, ProposalStatus, REASON_MAX, SUMMARY_MAX, TITLE_MAX,
             can_transition, min_count, normalize_text,
             view::{
-                Dashboard, Deadline, Draft, DraftInput, DraftSaved, DuplicateHit, ProposalDetail,
-                ProposalPage, ProposalSummary, Published, Signers, ViewerState,
+                Dashboard, Deadline, Draft, DraftInput, DraftSaved, DuplicateHit, Place,
+                ProposalDetail, ProposalPage, ProposalSummary, Published, Signers,
+                TerritoryOptions, ViewerState,
             },
         },
     },
@@ -675,6 +676,9 @@ pub struct ListFilter {
     pub kind: Option<ProposalKind>,
     pub status: Option<ProposalStatus>,
     pub level: Option<Level>,
+    /// State and city jurisdiction codes; the city wins when it lies in the state.
+    pub state: Option<String>,
+    pub city: Option<String>,
     pub page: u32,
 }
 
@@ -707,8 +711,112 @@ impl ListFilter {
             status,
             level: opt(level, "level", Level::from_db)?,
             page: page.unwrap_or(1).clamp(1, 10_000),
+            ..Self::default()
         })
     }
+
+    /// Territorial filter from public query values (jurisdiction codes, checked
+    /// against the catalog when listing).
+    pub fn with_territory(self, state: Option<&str>, city: Option<&str>) -> Result<Self, AppError> {
+        fn code(v: Option<&str>, field: &str) -> Result<Option<String>, AppError> {
+            match v.filter(|v| !v.is_empty()) {
+                None => Ok(None),
+                Some(v) if v.len() <= 16 && v.bytes().all(|b| b.is_ascii_alphanumeric()) => {
+                    Ok(Some(v.to_owned()))
+                }
+                Some(_) => Err(AppError::validation(field, t("proposals.error.filter"))),
+            }
+        }
+        Ok(Self {
+            state: code(state, "state")?,
+            city: code(city, "city")?,
+            ..self
+        })
+    }
+}
+
+/// Jurisdiction id and parent id for a code of the given kind; a wrong kind or
+/// unknown code is an invalid filter.
+async fn territory(
+    conn: &Connection,
+    code: &str,
+    level: Level,
+    field: &str,
+) -> Result<(String, Option<String>), AppError> {
+    let row = query_opt(
+        conn,
+        "SELECT id, parent_id FROM jurisdictions WHERE code = ?1 AND kind = ?2",
+        (code, level.as_db()),
+    )
+    .await?
+    .ok_or_else(|| AppError::validation(field, t("proposals.error.filter")))?;
+    Ok((row.get(0)?, row.get(1)?))
+}
+
+/// Lowercase name without Portuguese accents, so "Pará" sorts before "Paraná"
+/// (the engine's binary collation puts accented letters last).
+fn sort_key(name: &str) -> String {
+    name.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
+/// Public territorial filter options: the deployment country, its states and,
+/// when a state is chosen, its cities (sorted by name).
+#[tracing::instrument(level = "debug", skip_all, err(level = "debug"))]
+pub async fn territory_options(
+    conn: &Connection,
+    state: Option<&str>,
+) -> Result<TerritoryOptions, AppError> {
+    let places = async |sql: &str, param: &str| -> Result<Vec<Place>, AppError> {
+        let mut places = query_all(conn, sql, [param])
+            .await?
+            .iter()
+            .map(|r| {
+                Ok(Place {
+                    code: r.get(0)?,
+                    name: r.get(1)?,
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+        places.sort_by_cached_key(|p| sort_key(&p.name));
+        Ok(places)
+    };
+    let country = places(
+        "SELECT code, name FROM jurisdictions WHERE kind = ?1 LIMIT 1",
+        Level::National.as_db(),
+    )
+    .await?
+    .pop()
+    .ok_or_else(|| AppError::internal("territorial catalog has no country"))?;
+    let states = places(
+        "SELECT code, name FROM jurisdictions WHERE kind = ?1 AND active = 1",
+        Level::State.as_db(),
+    )
+    .await?;
+    let cities = match state.filter(|s| !s.is_empty()) {
+        Some(code) => places(
+            "SELECT m.code, m.name FROM jurisdictions m JOIN jurisdictions s ON s.id = m.parent_id
+                 WHERE s.code = ?1 AND s.kind = 'state' AND m.kind = 'municipal' AND m.active = 1",
+            code,
+        )
+        .await?,
+        None => Vec::new(),
+    };
+    Ok(TerritoryOptions {
+        country,
+        states,
+        cities,
+    })
 }
 
 /// Public paginated listing. Drafts are never listed; archived only on request.
@@ -734,6 +842,26 @@ pub async fn list(
     if let Some(l) = filter.level {
         params.push(l.as_db().into());
         clauses.push(format!("j.kind = ?{}", params.len()));
+    }
+    let state = match &filter.state {
+        Some(code) => Some(territory(conn, code, Level::State, "state").await?.0),
+        None => None,
+    };
+    let city = match &filter.city {
+        Some(code) => {
+            let (id, parent) = territory(conn, code, Level::Municipal, "city").await?;
+            // A city left over from another state (form without WebAssembly) yields to the state.
+            (state.is_none() || state == parent).then_some(id)
+        }
+        None => None,
+    };
+    if let Some(id) = city {
+        params.push(id.into());
+        clauses.push(format!("j.id = ?{}", params.len()));
+    } else if let Some(id) = state {
+        params.push(id.into());
+        let n = params.len();
+        clauses.push(format!("(j.id = ?{n} OR j.parent_id = ?{n})"));
     }
     let where_sql = format!("WHERE {}", clauses.join(" AND "));
     let total: u64 = query_opt(
@@ -975,4 +1103,31 @@ pub async fn export_markdown(conn: &Connection, tz: Tz, id: &str) -> Result<Stri
         body = p.body,
         k_hash = t("proposals.export.hash_rule"),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn place_names_sort_ignoring_accents_and_case() {
+        let mut names = [
+            "Paraná",
+            "Pará",
+            "Paraíba",
+            "Rio Grande do Sul",
+            "rio de Janeiro",
+        ];
+        names.sort_by_cached_key(|n| sort_key(n));
+        assert_eq!(
+            names,
+            [
+                "Pará",
+                "Paraíba",
+                "Paraná",
+                "rio de Janeiro",
+                "Rio Grande do Sul"
+            ]
+        );
+    }
 }

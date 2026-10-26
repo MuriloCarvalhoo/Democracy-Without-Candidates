@@ -61,18 +61,18 @@ Assincronismo e paralelismo do Tokio, que o Axum usa, ficam em [rust-async.md](r
 | Item | Situação | Ação sugerida |
 | --- | --- | --- |
 | `AppState` via `Extension` (`server/http.rs:57`) | 🔎 Funciona, mas falha em execução se faltar | Baixa prioridade: migrar para `State` quando tocar no router |
-| Sem `ConcurrencyLimit`/`LoadShed` (`server/http.rs:21-58`) | ⚠️ Um pico enfileira sem limite em memória e em workers | Pôr `HandleErrorLayer` + `LoadShedLayer` + `ConcurrencyLimitLayer` por fora do router; limite definido por medição em `just load` |
-| Sem timeout de requisição | ⚠️ Handler lento segura conexão e recursos | `TimeoutLayer::with_status_code` (ex.: 30 s) e `RequestBodyTimeoutLayer` |
-| `axum::serve` sem timer (`server/startup.rs:342-351`) | ⚠️ Sem timeout de cabeçalho; exposto a slowloris se não houver proxy | Exigir Caddy na frente em produção, ou trocar por hyper-util com timer |
-| `TCP_NODELAY` desligado | 🔎 Pode somar latência em respostas pequenas | Ligar com `tap_io`; medir |
+| Limite de concorrência e load shedding | ✅ **Corrigido em 2026-10-25:** `protect()` (`server/http.rs`) com `GlobalConcurrencyLimitLayer` (um limite para todas as rotas; `Router::layer` aplica camadas por rota, então `ConcurrencyLimitLayer` daria um limite por rota) + `LoadShedLayer` + `HandleErrorLayer` → 503 imediato. `DWC_MAX_IN_FLIGHT`, padrão 1024 | Calibrar o limite com `just load` até saturação |
+| Timeout de requisição | ✅ **Corrigido:** handler 30 s (503) e corpo 30 s (408); testes `slow_handlers_time_out_with_503` e `requests_beyond_the_limit_are_shed_with_503` | Manter |
+| `axum::serve` sem timer | ✅ Mitigado: o Caddy de exemplo (`ops/caddy/Caddyfile`) corta cabeçalho em 10 s, corpo em 30 s e ociosidade em 2 min; o app escuta em loopback | Decisão pendente: exigir Caddy ou trocar por hyper-util com timer (`sdd-plan.md`, dúvida 10) |
+| `TCP_NODELAY` | ✅ **Ligado** com `ListenerExt::tap_io` (`server/startup.rs`) | Manter |
 | Drenagem de 30 s no shutdown (`server/startup.rs:354-360`) | ✅ Segue o exemplo oficial | Manter |
 | `RequestBodyLimitLayer` de 2 MiB global (`server/http.rs:51-53`) | ✅ | Manter |
 | `CatchPanicLayer` e `panic` sem `abort` no servidor | ✅ | Manter; não ligar `panic = "abort"` no binário |
 | Clientes reqwest com `timeout` e `connect_timeout` (`infrastructure/address.rs:105-107`, `face_service.rs:138-140`) e criados uma vez | ✅ | Manter |
 | Sem `[profile.release]` com LTO para o servidor (`Cargo.toml`) | ⚠️ | Medir `lto = "thin"` e `codegen-units = 1` com `just load` antes de adotar |
-| Compressão | 🔎 Nenhuma no app; o Caddy de exemplo pode fazer | Fazer no proxy; não duplicar no app |
+| Compressão e limite de arquivos | ✅ Caddy faz `encode zstd gzip`; `ops/systemd/dwc.service` com `LimitNOFILE=65536` (o padrão flexível é 1024) | Manter |
 | Middleware `server_fn_error_status` lê o corpo só de respostas 500 de server function (`server/http.rs:74-92`) | ✅ Custo limitado a erros, máximo 64 KiB | Manter |
 
 ## 7. Avaliação para milhões de acessos nesta máquina
 
-🔎 Axum não é o limite: o smoke medido chegou a 7.842 req/s com p99 ≤ 4 ms (ver [turso.md §7](turso.md#7-capacidade-nesta-máquina)). O que falta para alto volume é **proteção**, não velocidade: limite de concorrência, load shedding, timeouts e um proxy com timeouts de conexão. Sem eles, um pico ou clientes lentos derrubam a latência de todos antes de a CPU acabar.
+🔎 Axum não é o limite: o smoke medido chegou a 7.842 req/s com p99 ≤ 4 ms (ver [turso.md §7](turso.md#7-capacidade-nesta-máquina)). O que faltava para alto volume era **proteção**, não velocidade: limite de concorrência, load shedding, timeouts e um proxy com timeouts de conexão. Desde 2026-10-25 estão no app e no Caddy de exemplo; falta calibrar `DWC_MAX_IN_FLIGHT` com carga até saturação.

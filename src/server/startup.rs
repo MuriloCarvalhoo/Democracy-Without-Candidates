@@ -9,7 +9,7 @@ use std::{
 
 use leptos::prelude::get_configuration;
 
-use super::{AppState, IdentityServices, backup, http::router};
+use super::{AppState, IdentityServices, background::Background, backup, http::router};
 use crate::{
     application::checkpoint::{self, CheckpointCheck},
     domain::audit::Checkpoint,
@@ -308,7 +308,14 @@ async fn serve(
         secrets: SecretBox::load(&config)?,
         address,
     };
-    spawn_snapshot_on_signal(db.clone(), snapshot_dir()?);
+    let snapshots = snapshot_dir()?;
+    let mut background = Background::default();
+    {
+        let db = db.clone();
+        background.supervise("snapshot", move || {
+            snapshot_on_signal(db.clone(), snapshots.clone())
+        });
+    }
     let state = AppState {
         db,
         config: Arc::new(config),
@@ -318,18 +325,24 @@ async fn serve(
         identity: Arc::new(identity),
     };
     let ticker = Duration::from_secs(state.config.ticker_secs.unsigned_abs());
-    spawn_reminders(state.clone(), ticker);
-    // Deadline transitions resume from persisted instants after any restart.
-    tokio::spawn(crate::application::phases::run_ticker(
-        state.db.clone(),
-        state.clock.clone(),
-        ticker,
-    ));
-    // Full audit chain recomputation off the request path.
-    tokio::spawn(crate::application::audit::run_chain_verifier(
-        state.db.clone(),
-        state.clock.clone(),
-    ));
+    {
+        let state = state.clone();
+        background.supervise("reminders", move || reminders(state.clone(), ticker));
+    }
+    {
+        // Deadline transitions resume from persisted instants after any restart.
+        let (db, clock) = (state.db.clone(), state.clock.clone());
+        background.supervise("deadlines", move || {
+            crate::application::phases::run_ticker(db.clone(), clock.clone(), ticker)
+        });
+    }
+    {
+        // Full audit chain recomputation off the request path.
+        let (db, clock) = (state.db.clone(), state.clock.clone());
+        background.supervise("audit-chain", move || {
+            crate::application::audit::run_chain_verifier(db.clone(), clock.clone())
+        });
+    }
     let app = router(state, leptos_options);
 
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -338,6 +351,12 @@ async fn serve(
     tracing::info!(pid = std::process::id(), "listening on http://{addr}");
     println!("dwc listening on http://{addr}");
 
+    // Small SSR/server-function responses are not held back by Nagle's algorithm.
+    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+        if let Err(error) = tcp.set_nodelay(true) {
+            tracing::debug!(%error, "TCP_NODELAY not set");
+        }
+    });
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
         // Peer address feeds the per-IP authentication limit.
@@ -364,24 +383,27 @@ async fn serve(
         Ok(Err(e)) => Err(format!("server task: {e}")),
         Err(_) => Err("graceful shutdown timed out after 30 s".into()),
     };
+    // After the drain, so no request waits on a stopped loop. An uncommitted
+    // write of a stopped loop is never durable.
+    background.shutdown().await;
     tracing::warn!(cause, "server stopped; it is not restarted automatically");
     result
 }
 
 /// Delivers due scheduled notifications (vote opened/result, deadline
 /// reminders) every ticker interval (30 s by default).
-fn spawn_reminders(state: AppState, every: Duration) {
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(every);
-        loop {
-            tick.tick().await;
-            match crate::application::notify::remind_due(&state.db, state.now()).await {
-                Ok(0) => {}
-                Ok(n) => tracing::info!(delivered = n, "scheduled notifications delivered"),
-                Err(e) => tracing::warn!(error = %e, "scheduled notifications failed"),
-            }
+async fn reminders(state: AppState, every: Duration) {
+    let mut tick = tokio::time::interval(every);
+    // After a stall, run once instead of a burst of catch-up runs.
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        match crate::application::notify::remind_due(&state.db, state.now()).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(delivered = n, "scheduled notifications delivered"),
+            Err(e) => tracing::warn!(error = %e, "scheduled notifications failed"),
         }
-    });
+    }
 }
 
 /// Optional `DWC_SNAPSHOT_DIR`: existing absolute directory for online snapshots.
@@ -401,9 +423,9 @@ fn snapshot_dir() -> Result<Option<PathBuf>, String> {
 /// Online backup: on SIGUSR1 the owning process writes `dwc-<UTC>.db` with the
 /// engine's consistent copy. The handler is always installed so a stray signal
 /// never terminates the server.
-fn spawn_snapshot_on_signal(db: Db, dir: Option<PathBuf>) {
+async fn snapshot_on_signal(db: Db, dir: Option<PathBuf>) {
     #[cfg(unix)]
-    tokio::spawn(async move {
+    {
         use tokio::signal::unix::{SignalKind, signal};
         let Ok(mut usr1) = signal(SignalKind::user_defined1()) else {
             tracing::error!("cannot install SIGUSR1 handler; online snapshots disabled");
@@ -421,7 +443,7 @@ fn spawn_snapshot_on_signal(db: Db, dir: Option<PathBuf>) {
                 Err(e) => tracing::error!(error = %e, "snapshot failed"),
             }
         }
-    });
+    }
     #[cfg(not(unix))]
     let _ = (db, dir);
 }

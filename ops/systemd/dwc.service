@@ -16,7 +16,10 @@ Restart=on-failure
 RestartSec=5
 # SIGTERM: stop accepting, drain in-flight requests (app limit 30 s), then exit.
 KillSignal=SIGTERM
-TimeoutStopSec=35
+# Drain (30 s) plus stopping background loops.
+TimeoutStopSec=40
+# Soft limit 1024 by default; Rust does not raise it. Each connection is a descriptor.
+LimitNOFILE=65536
 StateDirectory=dwc
 StateDirectoryMode=0700
 UMask=0077

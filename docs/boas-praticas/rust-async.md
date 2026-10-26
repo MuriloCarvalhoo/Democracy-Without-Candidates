@@ -44,9 +44,9 @@ Complementa [rust-praticas-da-documentacao.md](../rust-praticas-da-documentacao.
 | Writer em `tokio::sync::Mutex` atravessando `.await` (`infrastructure/db.rs:22-26, 84-91`) | ✅ Uso correto do mutex async; FIFO | 🔎 Latência de escrita ≈ fila × duração da transação: manter transações curtas |
 | Pool de leitores em `std::sync::Mutex` (`infrastructure/db.rs:25, 50`) | ✅ Seção crítica curta, sem `.await` | Manter |
 | I/O de disco do Turso dentro dos workers | ⚠️ Ver [turso.md §1](turso.md#1-como-o-crate-faz-io) | Medir p99 com banco maior que a RAM de cache |
-| Verificação completa da auditoria num worker (`application/audit.rs:146-186`) | ⚠️ JSON + SHA-256 por linha sobre toda a tabela; linhas em cache não cedem | Paginar e ceder com `yield_now`, ou `spawn_blocking` |
-| Tarefas de fundo com `JoinHandle` dropado (`server/startup.rs:320-332, 367, 399`) | ⚠️ Um pânico mata o lembrete, o ticker de prazos ou o verificador **em silêncio**, sem reinício; o shutdown não espera por elas | `TaskTracker` + `CancellationToken`; registrar e reiniciar em pânico |
-| `interval` sem `MissedTickBehavior` em `spawn_reminders` e `run_chain_verifier` (`server/startup.rs:369`, `application/audit.rs:309`) | 🔎 Depois de um atraso longo, rajada de execuções | `Delay` ou `Skip`, como `phases::run_ticker` já faz (`application/phases.rs:544`) |
+| Verificação completa da auditoria | ✅ **Corrigido em 2026-10-25:** antes não cedia a thread nenhuma vez (teste `full_walk_yields_to_other_tasks` mediu 0); agora páginas de 256 eventos com `yield_now` entre elas (`application/audit.rs`). 100 mil eventos: 530 ms em release, ~1,3 ms por página | Manter |
+| Tarefas de fundo | ✅ **Corrigido:** `server/background.rs` supervisiona lembretes, prazos, verificador e snapshot: pânico é registrado e a tarefa reinicia em 5 s; param depois da drenagem do servidor (`JoinSet` + abort da tarefa supervisionada) | Manter |
+| `MissedTickBehavior` | ✅ **Corrigido:** `Delay` em lembretes e verificador, como `phases::run_ticker` | Manter |
 | Log de acesso por requisição em `stderr`, síncrono (`server/observability.rs:62-69, 97-110`) | ⚠️ Cada linha trava `stderr` num worker; com journald lento, a escrita bloqueia a requisição | Medir; se pesar, `tracing-appender::non_blocking` com descarte quando a fila enche |
 | `tokio::spawn` por requisição | ✅ Nenhum no caminho da requisição | Manter |
 

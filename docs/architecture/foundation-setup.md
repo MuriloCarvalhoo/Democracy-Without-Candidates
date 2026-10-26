@@ -94,6 +94,8 @@ CI (`.github/workflows/ci.yml`) usa os mesmos comandos. Erros de configuração,
 | `just load 20 30s` | 243.114 requisições, 0 falhas (7.842 req/s); 20/20 votos = 20 cédulas, sem duplicatas, `counter_mismatch` 0; `integrity_check` ok; p99 ≤ 4 ms. Experimento local na mesma máquina, não capacidade |
 | `just backup-test` | Passou: snapshot online durante escritas e offline restaurados, cadeia de auditoria válida |
 
+Endurecimento para alta carga (branch `fix/high-load-hardening`, 2026-10-25, mesma máquina; detalhes em [boas práticas](../boas-praticas/)): `just check` passou; `just test` 224 passaram, 0 falhas, 2 ignorados; `just e2e` 28 testes em 13 alvos passaram; `just backup-test` passou; `just load 20 30s` com 424.590 requisições, 0 falhas (13.696 req/s, p99 ≤ 6 ms), invariantes e `integrity_check` ok. A diferença de vazão em relação à execução anterior não é atribuída às mudanças (a anterior dividia a máquina com builds). Navegador headless em `/propostas`: hidratada, sem mensagens de console; `/pkg` sem `Set-Cookie` e com 304 condicional.
+
 Persistência após restart é coberta por testes Rust (sessões, prazos, encerramento de votação) e pelo E2E da fundação. Artefatos de carga ficam em `artifacts/load/<timestamp>/`, ignorados pelo Git.
 
 ## Ordem após a fundação

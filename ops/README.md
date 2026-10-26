@@ -23,7 +23,7 @@ A conta precisa existir e estar ativa; recebe a política `AdministratorAccess`.
 
 ## Flags
 
-O painel `/admin` grava flags e mostra "pendente de reinício". O painel não reinicia o serviço; o operador executa `systemctl restart dwc` (parada graciosa de até 30 s, `TimeoutStopSec=35`).
+O painel `/admin` grava flags e mostra "pendente de reinício". O painel não reinicia o serviço; o operador executa `systemctl restart dwc` (parada graciosa de até 30 s, `TimeoutStopSec=40`).
 
 ## Atualização e rollback
 

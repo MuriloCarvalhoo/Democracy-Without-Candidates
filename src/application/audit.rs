@@ -140,6 +140,9 @@ pub async fn verify(conn: &Connection) -> Result<ChainStatus, AppError> {
 /// Event kind → whether any event of that kind is public.
 type Kinds = BTreeMap<String, bool>;
 
+/// Events per statement of [`walk`]; the walk yields between pages.
+const WALK_PAGE: usize = 256;
+
 /// Streams events with `after_seq < seq <= until`, continuing from `after_hash`.
 /// `Valid.events` is the last verified seq (seqs are contiguous from 1). Kinds seen
 /// are collected into `kinds`.
@@ -150,38 +153,50 @@ pub(crate) async fn walk(
     until: i64,
     kinds: &mut Kinds,
 ) -> Result<ChainStatus, AppError> {
-    let mut rows = conn
-        .query(
-            "SELECT seq, occurred_at, kind, visibility, actor_ref, subject, payload, prev_hash, hash
-             FROM audit_events WHERE seq > ?1 AND seq <= ?2 ORDER BY seq",
-            (after_seq, until),
-        )
-        .await?;
     let mut prev = after_hash.to_owned();
     let mut last = after_seq;
-    while let Some(row) = rows.next().await? {
-        let seq: i64 = row.get(0)?;
-        let prev_hash: String = row.get(7)?;
-        let hash: String = row.get(8)?;
-        let (kind, visibility): (String, String) = (row.get(2)?, row.get(3)?);
-        let recomputed = chain_hash(
-            &prev,
-            serde_json::json!([
-                seq,
-                row.get::<String>(1)?,
-                kind,
-                visibility,
-                row.get::<Option<String>>(4)?,
-                row.get::<Option<String>>(5)?,
-                row.get::<String>(6)?,
-            ]),
-        );
-        *kinds.entry(kind).or_default() |= visibility == "public";
-        if seq != last + 1 || prev_hash != prev || recomputed != hash {
-            return Ok(ChainStatus::Broken { at_seq: seq });
+    // Short statements: no snapshot held over the whole table (WAL checkpoints
+    // proceed) and the worker is released between pages. Rows are append-only,
+    // so pages are consistent with each other.
+    loop {
+        let mut rows = conn
+            .query(
+                "SELECT seq, occurred_at, kind, visibility, actor_ref, subject, payload, prev_hash, hash
+                 FROM audit_events WHERE seq > ?1 AND seq <= ?2 ORDER BY seq LIMIT ?3",
+                (last, until, WALK_PAGE as i64),
+            )
+            .await?;
+        let mut in_page = 0;
+        while let Some(row) = rows.next().await? {
+            in_page += 1;
+            let seq: i64 = row.get(0)?;
+            let prev_hash: String = row.get(7)?;
+            let hash: String = row.get(8)?;
+            let (kind, visibility): (String, String) = (row.get(2)?, row.get(3)?);
+            let recomputed = chain_hash(
+                &prev,
+                serde_json::json!([
+                    seq,
+                    row.get::<String>(1)?,
+                    kind,
+                    visibility,
+                    row.get::<Option<String>>(4)?,
+                    row.get::<Option<String>>(5)?,
+                    row.get::<String>(6)?,
+                ]),
+            );
+            *kinds.entry(kind).or_default() |= visibility == "public";
+            if seq != last + 1 || prev_hash != prev || recomputed != hash {
+                return Ok(ChainStatus::Broken { at_seq: seq });
+            }
+            prev = hash;
+            last = seq;
         }
-        prev = hash;
-        last = seq;
+        drop(rows);
+        if in_page < WALK_PAGE {
+            break;
+        }
+        tokio::task::yield_now().await;
     }
     Ok(ChainStatus::Valid {
         events: last,
@@ -311,6 +326,7 @@ pub async fn run_chain_verifier(
             .to_std()
             .unwrap_or(std::time::Duration::from_secs(600)),
     );
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tick.tick().await;
         let result = match db.read().await {
@@ -755,6 +771,74 @@ mod tests {
         assert_eq!(
             summary(&conn, &cache, later).await.unwrap().status,
             ChainStatus::Broken { at_seq: 2 }
+        );
+    }
+
+    async fn append_n(db: &Db, n: usize) {
+        let now = Utc::now();
+        let tx = db.write().await.unwrap();
+        for _ in 0..n {
+            append(&tx, now, ev("k", Visibility::Public, None))
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+
+    /// Regression: a full walk over many events lets other tasks on the same
+    /// worker run between pages instead of holding the thread to the end.
+    #[tokio::test(flavor = "current_thread")]
+    async fn full_walk_yields_to_other_tasks() {
+        let t = migrated().await;
+        append_n(&t.db, WALK_PAGE * 4 + 3).await;
+        let conn = t.db.read().await.unwrap();
+        let _ = verify(&conn).await.unwrap(); // warm the page cache
+        let runs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = runs.clone();
+        let other = tokio::spawn(async move {
+            loop {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::task::yield_now().await;
+            }
+        });
+        tokio::task::yield_now().await;
+        let before = runs.load(std::sync::atomic::Ordering::SeqCst);
+        let status = verify(&conn).await.unwrap();
+        let during = runs.load(std::sync::atomic::Ordering::SeqCst) - before;
+        other.abort();
+        assert!(
+            matches!(status, ChainStatus::Valid { events, .. } if events == (WALK_PAGE * 4 + 3) as i64)
+        );
+        assert!(during >= 4, "other task ran {during} times during the walk");
+    }
+
+    /// Tampering right after a page boundary is still detected at its seq.
+    #[tokio::test]
+    async fn walk_detects_tampering_across_pages() {
+        let t = migrated().await;
+        append_n(&t.db, WALK_PAGE * 2 + 1).await;
+        let conn = t.db.read().await.unwrap();
+        conn.execute("DROP TRIGGER audit_events_no_update", ())
+            .await
+            .unwrap();
+        let seq = WALK_PAGE as i64 + 1;
+        conn.execute(
+            "UPDATE audit_events SET payload = '{}' WHERE seq = ?1",
+            [seq],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            verify(&conn).await.unwrap(),
+            ChainStatus::Broken { at_seq: seq }
+        );
+        let mut kinds = Kinds::new();
+        assert!(
+            matches!(
+                walk(&conn, 0, GENESIS, WALK_PAGE as i64, &mut kinds).await.unwrap(),
+                ChainStatus::Valid { events, .. } if events == WALK_PAGE as i64
+            ),
+            "`until` stops before the tampered row"
         );
     }
 

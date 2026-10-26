@@ -3,6 +3,18 @@
 # production); CSRF protection compares Origin with DWC_PUBLIC_ORIGIN, so keep Host/Origin.
 # reverse_proxy sets X-Forwarded-For to the client IP (client-sent values are dropped
 # unless `trusted_proxies` is configured); the app reads it only from DWC_TRUSTED_PROXY.
+# The app's own HTTP server has no header/idle timeouts (axum::serve): slow clients
+# are cut here. The app sheds load with 503 and times handlers out after 30 s.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 30s
+			idle 2m
+		}
+	}
+}
+
 <subdominio> {
 	encode zstd gzip
 	request_body {

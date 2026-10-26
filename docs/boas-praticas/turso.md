@@ -73,7 +73,7 @@ Auditoria de `src/infrastructure/db.rs` e das chamadas a `Db::write()` fora de t
 | Trabalho lento dentro da transação de escrita | ✅ Varredura não achou HTTP, face ou Argon2 entre `write()` e `commit()`; a verificação facial roda depois do commit da reserva (`application/identity/mod.rs:289-296`) | Manter como regra; teste de regressão é desejável |
 | `query`/`execute` sem cache de statement | ⚠️ Todo SQL é recompilado a cada chamada | Medir `prepare_cached` nas consultas quentes (sessão, IAM, listagem) |
 | Disco bloqueando workers Tokio | ⚠️ Inerente ao crate; hoje cada requisição roda I/O no worker | Medir p99 sob carga com banco maior que o cache; se piorar, mover o writer para thread/runtime dedicado |
-| Verificação completa da cadeia de auditoria (`application/audit.rs:146-186`) | ⚠️ Um único `SELECT` sobre todo `audit_events`, com JSON + SHA-256 por linha, num worker async a cada 10 min. Com milhões de eventos: snapshot longo (WAL cresce) e worker ocupado sem ceder | Paginar por `seq` em transações curtas e ceder (`tokio::task::yield_now`) entre páginas, ou rodar em `spawn_blocking` |
+| Verificação completa da cadeia de auditoria | ✅ **Corrigido em 2026-10-25:** era um único `SELECT` sobre todo `audit_events` (snapshot longo, worker sem ceder); agora páginas de 256 por `seq`, cada uma um statement curto, com `yield_now` entre elas | Manter |
 | `synchronous` padrão `FULL` | 📖 Seguro; um `fsync` por commit | Manter `FULL` para votos. Não trocar por `NORMAL` sem decisão explícita |
 | `busy_timeout(5s)` em todas as conexões | 🔎 Útil contra checkpoint; sob disputa vira laço de CPU | Manter; observar CPU em carga concentrada |
 

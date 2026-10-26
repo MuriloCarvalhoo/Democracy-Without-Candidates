@@ -75,7 +75,13 @@ pub struct Config {
     /// `DWC_DEBUG=1`: debug tracing of instrumented functions (development/test
     /// only; rejected in production). Read by `server::observability` at startup.
     pub debug: bool,
+    /// Requests handled at once (`DWC_MAX_IN_FLIGHT`, default 1024); beyond it
+    /// the server answers 503 at once instead of queueing without bound.
+    pub max_in_flight: usize,
 }
+
+/// Agent proposal pending load calibration (`just load` ramp to saturation).
+pub const DEFAULT_MAX_IN_FLIGHT: usize = 1024;
 
 pub const BRASILAPI_URL: &str = "https://brasilapi.com.br";
 
@@ -224,6 +230,16 @@ impl Config {
             }
         };
 
+        let max_in_flight = match get("DWC_MAX_IN_FLIGHT") {
+            None => DEFAULT_MAX_IN_FLIGHT,
+            Some(v) => v
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .filter(|n| *n > 0)
+                .ok_or(ConfigError::Invalid("DWC_MAX_IN_FLIGHT", v))?,
+        };
+
         Ok(Self {
             env,
             db_path,
@@ -242,6 +258,7 @@ impl Config {
             trusted_proxies,
             dev_skip_totp,
             debug,
+            max_in_flight,
         })
     }
 
@@ -376,6 +393,17 @@ mod tests {
         let mut fast_ticker = base.to_vec();
         fast_ticker.push(("DWC_TICKER_SECS", "1"));
         assert!(cfg(&fast_ticker).is_err(), "ticker fixed in production");
+    }
+
+    #[test]
+    fn max_in_flight_defaults_and_rejects_zero() {
+        assert_eq!(cfg(DEV).unwrap().max_in_flight, DEFAULT_MAX_IN_FLIGHT);
+        let mut pairs = DEV.to_vec();
+        pairs.push(("DWC_MAX_IN_FLIGHT", "64"));
+        assert_eq!(cfg(&pairs).unwrap().max_in_flight, 64);
+        pairs.pop();
+        pairs.push(("DWC_MAX_IN_FLIGHT", "0"));
+        assert!(cfg(&pairs).is_err());
     }
 
     #[test]

@@ -1,9 +1,13 @@
 //! Router assembly, CSRF origin verification, security headers and health check.
 
+use std::time::Duration;
+
 use axum::{
     Json, Router,
     body::Body,
+    error_handling::HandleErrorLayer,
     extract::{Request, State},
+    handler::Handler,
     http::{HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -22,6 +26,21 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
     let routes = generate_route_list(App);
     let ctx_state = state.clone();
     let fallback_state = state.clone();
+    // Site assets (`/pkg`, icons, manifest) are served without the reactive
+    // runtime; anything else renders the 404 page, which needs the layout's
+    // context. Leptos' own file handler looks up `ResponseOptions` through the
+    // worker's last render owner (leptos #4946): an asset could get another
+    // request's status or Set-Cookie, or the worker could deadlock.
+    let not_found = leptos_axum::file_and_error_handler_with_context(
+        move || provide_context(fallback_state.clone()),
+        shell,
+    )
+    .with_state(leptos_options.clone());
+    let assets = tower_http::services::ServeDir::new(&*leptos_options.site_root)
+        .precompressed_br()
+        .precompressed_gzip()
+        .call_fallback_on_method_not_allowed(true)
+        .fallback(not_found);
     let router = Router::new()
         .route("/healthz", get(health))
         .merge(super::observability::client_log_routes(
@@ -40,11 +59,7 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
                 move || shell(leptos_options.clone())
             },
         )
-        // The 404 page renders the same layout, so it needs the same context.
-        .fallback(leptos_axum::file_and_error_handler_with_context(
-            move || provide_context(fallback_state.clone()),
-            shell,
-        ))
+        .fallback_service(assets)
         .layer(middleware::from_fn(server_fn_error_status))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -53,9 +68,42 @@ pub fn router(state: AppState, leptos_options: LeptosOptions) -> Router {
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             2 * 1024 * 1024,
         ))
-        .with_state(leptos_options)
-        .layer(axum::Extension(state));
+        .with_state(leptos_options);
+    let max_in_flight = state.config.max_in_flight;
+    let router = protect(router.layer(axum::Extension(state)), max_in_flight);
     super::observability::layer(router)
+}
+
+/// Longest a handler may run before the request is answered 503. Above the
+/// face service (10 s) and address lookup timeouts; equal to the shutdown drain.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest a client may take to send the request body (408 afterwards).
+const BODY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Overload protection around every route and the fallback: at most
+/// `max_in_flight` requests at once (one limit shared by all routes), the rest
+/// shed with 503 instead of queueing without bound; handler and body timeouts.
+/// A timed-out handler is dropped at an `.await`: an open write transaction is
+/// rolled back on the next `Db::write()`.
+pub fn protect(router: Router, max_in_flight: usize) -> Router {
+    router
+        .layer(tower_http::timeout::RequestBodyTimeoutLayer::new(
+            BODY_TIMEOUT,
+        ))
+        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
+            StatusCode::SERVICE_UNAVAILABLE,
+            REQUEST_TIMEOUT,
+        ))
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(|_: tower::BoxError| async {
+                    (StatusCode::SERVICE_UNAVAILABLE, "server overloaded")
+                }))
+                .load_shed()
+                .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                    max_in_flight,
+                )),
+        )
 }
 
 /// Readiness: database answers a query. No private details in the body.
@@ -205,6 +253,169 @@ mod tests {
         // Plain 500s without the server_fn marker are left alone.
         let (got, _) = status_through_layer(None).await;
         assert_eq!(got, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    /// Router over a disposable database and a site root holding `pkg/app.js`.
+    async fn test_app() -> (Router, crate::infrastructure::db::testing::TestDb) {
+        use crate::{
+            infrastructure::{
+                clock::SystemClock, config::Config, face::FaceVerifier, flags::Flags,
+                secrets::SecretBox,
+            },
+            server::IdentityServices,
+        };
+        use std::sync::Arc;
+        let t = crate::infrastructure::db::testing::migrated().await;
+        let site = t.dir.path().join("site");
+        std::fs::create_dir_all(site.join("pkg")).unwrap();
+        std::fs::write(site.join("pkg/app.js"), "console.log(1)").unwrap();
+        let config = Config::from_lookup("127.0.0.1:3000".parse().unwrap(), |k| {
+            match k {
+                "DWC_ENV" => Some("test"),
+                "DWC_DB_PATH" => Some("unused.db"),
+                "DWC_COUNTRY" => Some("BR"),
+                "DWC_IDENTITY_PROVIDER" => Some("synthetic"),
+                _ => None,
+            }
+            .map(String::from)
+        })
+        .unwrap();
+        let state = AppState {
+            db: t.db.clone(),
+            config: Arc::new(config),
+            flags: Arc::new(Flags::default()),
+            clock: Arc::new(SystemClock),
+            face: FaceVerifier::Synthetic,
+            identity: Arc::new(IdentityServices {
+                secrets: SecretBox::from_key(&[9; 32]),
+                address: None,
+            }),
+        };
+        let options = LeptosOptions::builder()
+            .output_name("dwc")
+            .site_root(site.to_string_lossy().into_owned())
+            .build();
+        (router(state, options), t)
+    }
+
+    /// Regression (leptos #4946): a finished render leaves its root owner current
+    /// on the worker thread. A static file served afterwards on that thread must
+    /// not pick up that request's `ResponseOptions` (status, Set-Cookie).
+    #[tokio::test(flavor = "current_thread")]
+    async fn static_files_do_not_inherit_another_requests_response_options() {
+        use leptos::prelude::{Owner, provide_context};
+        use leptos_axum::ResponseOptions;
+        use tower::ServiceExt;
+        let (app, _t) = test_app().await;
+        let previous = Owner::new_root(None);
+        previous.with(|| {
+            let options = ResponseOptions::default();
+            options.set_status(StatusCode::IM_A_TEAPOT);
+            options.insert_header(
+                header::SET_COOKIE,
+                HeaderValue::from_static("dwc_session=; Max-Age=0"),
+            );
+            provide_context(options);
+        });
+        let res = app
+            .oneshot(Request::get("/pkg/app.js").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(
+            res.headers().get(header::SET_COOKIE).is_none(),
+            "leaked Set-Cookie: {:?}",
+            res.headers().get(header::SET_COOKIE)
+        );
+        drop(previous);
+    }
+
+    /// Missing assets and unknown pages still render the 404 page (any method).
+    #[tokio::test]
+    async fn unknown_paths_render_the_not_found_page() {
+        use tower::ServiceExt;
+        let (app, _t) = test_app().await;
+        for (method, path) in [
+            (Method::GET, "/pkg/missing.js"),
+            (Method::GET, "/nao-existe"),
+            (Method::POST, "/nao-existe"),
+        ] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method.clone())
+                        .uri(path)
+                        .header(header::ORIGIN, "http://127.0.0.1:3000")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{method} {path}");
+            let body = axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            assert!(
+                String::from_utf8_lossy(&body).contains("<html"),
+                "{method} {path} renders the layout"
+            );
+        }
+    }
+
+    /// Slow handler behind the overload protection with `max` requests at once.
+    fn slow_app(max: usize, delay: std::time::Duration) -> Router {
+        protect(
+            Router::new()
+                .route(
+                    "/slow",
+                    get(move || async move {
+                        tokio::time::sleep(delay).await;
+                        "done"
+                    }),
+                )
+                .route("/fast", get(|| async { "done" })),
+            max,
+        )
+    }
+
+    /// Beyond the in-flight limit (shared by all routes) the server answers 503
+    /// at once (load shedding), and admits requests again once capacity frees up.
+    #[tokio::test]
+    async fn requests_beyond_the_limit_are_shed_with_503() {
+        use tower::ServiceExt;
+        let app = slow_app(1, std::time::Duration::from_millis(300));
+        let get_slow = || Request::get("/slow").body(Body::empty()).unwrap();
+        let first = tokio::spawn(app.clone().oneshot(get_slow()));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let started = std::time::Instant::now();
+        let shed = app
+            .clone()
+            .oneshot(Request::get("/fast").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(shed.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "not queued"
+        );
+        assert_eq!(first.await.unwrap().unwrap().status(), StatusCode::OK);
+        assert_eq!(
+            app.oneshot(get_slow()).await.unwrap().status(),
+            StatusCode::OK
+        );
+    }
+
+    /// A handler slower than the request timeout is cancelled with 503.
+    #[tokio::test(start_paused = true)]
+    async fn slow_handlers_time_out_with_503() {
+        use tower::ServiceExt;
+        let app = slow_app(8, REQUEST_TIMEOUT * 2);
+        let res = app
+            .oneshot(Request::get("/slow").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]

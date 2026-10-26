@@ -335,7 +335,7 @@ async fn serve(
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;
-    tracing::info!("listening on http://{addr}");
+    tracing::info!(pid = std::process::id(), "listening on http://{addr}");
     println!("dwc listening on http://{addr}");
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
@@ -350,15 +350,22 @@ async fn serve(
         })
         .await
     });
-    shutdown_signal().await;
-    tracing::info!("shutdown requested; draining in-flight requests (max 30 s)");
+    // A supervisor that does not restart a stopped server (`cargo leptos watch`)
+    // leaves the port closed, so the cause is always logged as a warning.
+    let cause = shutdown_signal().await;
+    tracing::warn!(
+        cause,
+        "shutdown requested; draining in-flight requests (max 30 s)"
+    );
     let _ = stop_tx.send(());
-    match tokio::time::timeout(Duration::from_secs(30), server).await {
+    let result = match tokio::time::timeout(Duration::from_secs(30), server).await {
         Ok(Ok(Ok(()))) => Ok(()),
         Ok(Ok(Err(e))) => Err(format!("server: {e}")),
         Ok(Err(e)) => Err(format!("server task: {e}")),
         Err(_) => Err("graceful shutdown timed out after 30 s".into()),
-    }
+    };
+    tracing::warn!(cause, "server stopped; it is not restarted automatically");
+    result
 }
 
 /// Delivers due scheduled notifications (vote opened/result, deadline
@@ -419,21 +426,36 @@ fn spawn_snapshot_on_signal(db: Db, dir: Option<PathBuf>) {
     let _ = (db, dir);
 }
 
-async fn shutdown_signal() {
+/// Waits for SIGINT (Ctrl+C reaches the whole terminal process group) or
+/// SIGTERM and names it. A handler that cannot be installed never resolves, so
+/// it cannot stop the server by itself.
+async fn shutdown_signal() -> &'static str {
     let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => "SIGINT",
+            Err(e) => {
+                tracing::error!(error = %e, "cannot listen for SIGINT");
+                std::future::pending().await
+            }
+        }
     };
     #[cfg(unix)]
     let terminate = async {
-        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
-            s.recv().await;
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+                "SIGTERM"
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "cannot listen for SIGTERM");
+                std::future::pending().await
+            }
         }
     };
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = std::future::pending::<&'static str>();
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        cause = ctrl_c => cause,
+        cause = terminate => cause,
     }
 }

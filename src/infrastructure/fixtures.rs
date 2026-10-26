@@ -342,7 +342,7 @@ async fn seed_legislative(
         let input = DraftInput {
             kind,
             level,
-            title: format!("[Sintético] {title}"),
+            title: title.to_owned(),
             summary: format!(
                 "Proposta sintética de demonstração: {}.",
                 title.to_lowercase()
@@ -384,7 +384,7 @@ async fn seed_legislative(
         let input = DraftInput {
             kind: ProposalKind::UrgentLaw,
             level,
-            title: format!("[Sintético] {title}"),
+            title: title.to_owned(),
             summary: format!(
                 "Votação sintética de demonstração: {}.",
                 title.to_lowercase()

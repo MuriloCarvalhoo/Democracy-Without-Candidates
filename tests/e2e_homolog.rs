@@ -90,7 +90,9 @@ async fn homologation_laws_are_listed_by_level_and_cite_the_official_source() {
         .await;
     let state_items = items(&browser).await;
     assert!(
-        state_items.iter().any(|t| t.contains("[Homologação]")),
+        state_items
+            .iter()
+            .any(|t| t.contains("Demonstração de homologação")),
         "state list shows homologation laws ({total})"
     );
     screenshot(&browser, "propostas-estaduais").await;
@@ -101,7 +103,7 @@ async fn homologation_laws_are_listed_by_level_and_cite_the_official_source() {
         .await;
     browser
         .wait_text("[data-testid=proposal-item]", |t| {
-            t.contains("[Homologação]")
+            t.contains("Demonstração de homologação")
         })
         .await;
     screenshot(&browser, "propostas-nacionais-aprovadas").await;
@@ -111,7 +113,7 @@ async fn homologation_laws_are_listed_by_level_and_cite_the_official_source() {
         .await;
     browser
         .wait_text("[data-testid=proposal-item]", |t| {
-            t.contains("[Homologação]")
+            t.contains("Demonstração de homologação")
         })
         .await;
     screenshot(&browser, "propostas-nacionais").await;
@@ -120,7 +122,7 @@ async fn homologation_laws_are_listed_by_level_and_cite_the_official_source() {
     let link = browser
         .client
         .find(Locator::XPath(
-            "//li[@data-testid='proposal-item'][contains(., '[Homologação]')]//h3/a",
+            "//li[@data-testid='proposal-item'][contains(., 'Demonstração de homologação')]//h3/a",
         ))
         .await
         .unwrap();

@@ -279,7 +279,7 @@ fn truncate(text: &str, max: usize) -> String {
 /// as a homologation demonstration (never a real popular initiative).
 pub fn draft_input(law: &Law, phase: Phase, uf: Option<&str>) -> DraftInput {
     let place = uf.map(|uf| format!("{uf} – ")).unwrap_or_default();
-    let head = format!("[Homologação] {place}{}", citation(law));
+    let head = format!("{place}{}", citation(law));
     let title = if matches!(law.kind.as_str(), "constituicao" | "lei-organica") {
         truncate(&head, crate::domain::proposals::TITLE_MAX)
     } else {
@@ -736,6 +736,8 @@ mod tests {
             );
             assert!(d.body.contains("não é uma iniciativa popular real"));
             assert!(d.body.contains(&law.url) && d.body.contains(&marker(law)));
+            // The page banner already marks the environment; titles stay clean.
+            assert!(!d.title.starts_with('['), "{}", d.title);
         }
         assert_eq!(grouped("8078"), "8.078");
         assert_eq!(grouped("101"), "101");
